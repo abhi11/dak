@@ -1,0 +1,16 @@
+#!/bin/bash
+#
+# Fetches latest copy of mailing-lists.txt
+# Michael Beattie <mjb@debian.org>
+
+set -e
+
+export SCRIPTVARS=/srv/ftp-master.debian.org/dak/config/debian/vars
+. $SCRIPTVARS
+
+cd $ftpdir/doc
+
+echo Updating archive version of mailing-lists.txt
+wget -t1 -T20 -q -N http://www.debian.org/misc/mailing-lists.txt || \
+  echo "Some error occured..."
+

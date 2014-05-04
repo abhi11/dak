@@ -1,0 +1,34 @@
+Currently used substitutions in dak
+===================================
+
+Global
+------
+
+ o __ADMIN_ADDRESS__
+ o __BCC__ [*]
+ o __BUG_SERVER__
+ o __DISTRO__
+ o __DAK_ADDRESS__
+
+Per package
+-----------
+
+ o __ARCHITECTURE__
+ o __CHANGES_FILENAME__
+ o __FILE_CONTENTS__
+ o __MAINTAINER_ADDRESS__
+ o __MAINTAINER__
+ o __REJECT_MESSAGE__
+ o __SOURCE__
+ o __VERSION__
+
+Misc
+----
+
+ o __ANNOUNCE_LIST_ADDRESS__
+ o __BUG_NUMBER__
+ o __CONTROL_MESSAGE__
+ o __MANUAL_REJECT_MESSAGE__
+ o __SUMMARY__
+ o __SUITE__
+

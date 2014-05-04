@@ -1,0 +1,68 @@
+Common
+{
+  ThreadCount 1;
+};
+
+DB
+{
+  Name "projectb";
+  // PoolSize should be at least ThreadCount + 1
+  PoolSize 5;
+  // MaxOverflow shouldn't exceed postgresql.conf's max_connections - PoolSize
+  MaxOverflow 13;
+  // should be false for encoding == SQL_ASCII which is highly recommended
+  Unicode "false"
+};
+
+Dinstall
+{
+   SigningKeyring "__DAKBASE__/keyrings/s3kr1t/dot-gnupg/secring.gpg";
+   SigningPubKeyring "__DAKBASE__/keyrings/s3kr1t/dot-gnupg/pubring.gpg";
+
+   Options
+   {
+       No-Mail "true";
+   };
+
+   MyEmailAddress "Archive Installer <dak@__DAKFQDN__>";
+   MyAdminAddress "dak@__DAKFQDN__";
+   MyDistribution "TestDakInstance";
+
+   SkipTime 10;
+
+   DefaultSuite "unstable";
+};
+
+Dir
+{
+  Base "__DAKBASE__";
+  Root "__DAKBASE__/ftp/";
+  Pool "__DAKBASE__/ftp/pool/";
+  Templates "__DAKBASE__/templates/";
+  Log "__DAKBASE__/log/";
+  Lock "__DAKBASE__/lock/";
+  Morgue "__DAKBASE__/morgue/";
+  Holding "__DAKBASE__/holding/";
+  Done "__DAKBASE__/done/";
+  Reject "__DAKBASE__/reject/";
+  TempPath "__DAKBASE__/tmp/";
+};
+
+Rm
+{
+  LogFile "__DAKBASE__/log/removals.txt";
+  LogFile822 "__DAKBASE__/log/removals.822";
+};
+
+Urgency
+{
+  Default "low";
+  Valid
+  {
+    low;
+    medium;
+    high;
+    emergency;
+    critical;
+  };
+};

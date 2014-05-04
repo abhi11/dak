@@ -1,0 +1,38 @@
+#!/bin/bash
+
+# Copyright (C) 2008 Joachim Breitner <nomeata@debian.org>
+# Copyright (C) 2011 Joerg Jaspert <joerg@debian.org>
+#
+# This program is free software; you can redistribute it and/or
+# modify it under the terms of the GNU General Public License as
+# published by the Free Software Foundation; version 2.
+#
+# This program is distributed in the hope that it will be useful, but
+# WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
+# General Public License for more details.
+#
+# You should have received a copy of the GNU General Public License
+# along with this program; if not, write to the Free Software
+# Foundation, Inc., 675 Mass Ave, Cambridge, MA 02139, USA.
+
+# exit on errors
+set -e
+# make sure to only use defined variables
+set -u
+# ERR traps should be inherited from functions too. (And command
+# substitutions and subshells and whatnot, but for us the functions is
+# the important part here)
+set -E
+
+# import the general variable set.
+export SCRIPTVARS=/srv/ftp-master.debian.org/dak/config/debian/vars
+. $SCRIPTVARS
+
+# For debugging, you can override the path using
+# the WB_DB_DIR enviroment variable
+WB_DB_DIR=${WB_DB_DIR:-${scriptdir}/nfu}
+
+for arch in $(dak admin s-a list-arch unstable); do
+    wget -q http://buildd.debian.org/stats/$arch-all.txt -O ${WB_DB_DIR}/${arch}-all.txt
+done

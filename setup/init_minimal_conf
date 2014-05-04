@@ -1,0 +1,5 @@
+#!/bin/sh
+
+. ./init_vars
+
+sed -e "s@__DAKBASE__@${DAKBASE}@" -e "s@__DAKFQDN__@${DAKFQDN}@" dak-minimal.conf.template

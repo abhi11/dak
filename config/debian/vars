@@ -1,0 +1,43 @@
+# locations used by many scripts
+
+base=/srv/ftp-master.debian.org
+public=/srv/ftp.debian.org
+bindir=$base/bin
+ftpdir=$base/ftp
+webdir=$public/web
+indices=$ftpdir/indices
+archs=$(dak admin a list | tr '\n' ' ')
+
+scriptdir=$base/scripts
+masterdir=$base/dak/
+configdir=$base/dak/config/debian/
+scriptsdir=$base/dak/scripts/debian/
+dbdir=$base/database/
+lockdir=$base/lock/
+stagedir=$lockdir/stages
+overridedir=$scriptdir/override
+extoverridedir=$scriptdir/external-overrides
+logdir=$base/log/cron/
+
+queuedir=$base/queue/
+unchecked=$queuedir/unchecked/
+accepted=$queuedir/accepted/
+mirrordir=$base/mirror/
+incoming=$base/incoming
+newstage=$queuedir/newstage/
+exportdir=$base/export/
+exportpublic=$public/rsync/export/
+
+ftpgroup=debadmin
+
+public_archives=(ftp-master backports)
+
+TMPDIR=${base}/tmp
+
+PATH=$masterdir:$PATH
+umask 022
+unset CDPATH
+GZIP='--rsyncable' ; export GZIP
+
+# Set the database variables
+eval $(dak admin config db-shell)

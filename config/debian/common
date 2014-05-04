@@ -1,0 +1,175 @@
+# -*- mode:sh -*-
+# log something (basically echo it together with a timestamp)
+#
+# Set $PROGRAM to a string to have it added to the output.
+function log () {
+        local prefix=${PROGRAM:-}
+        echo "$(date +"%b %d %H:%M:%S") $(hostname -s) ${prefix}[$$]: $@"
+}
+
+# log the message using log() but then also send a mail
+# to the address configured in MAILTO (if non-empty)
+function log_error () {
+        log "$@"
+        if [ -z "${MAILTO}" ]; then
+                echo "$@" | mail -a "X-Debian: DAK" -e -s "[$PROGRAM@$(hostname -s)] ERROR [$$]" ${MAILTO}  -- -F "Debian FTP Masters" -f ftpmaster@ftp-master.debian.org
+        fi
+}
+
+# debug log, only output when DEBUG=1
+function debug () {
+    if [ $DEBUG -eq 1 ]; then
+        log "$*"
+    fi
+}
+
+function wbtrigger() {
+    SSHOPT="-o BatchMode=yes -o ConnectTimeout=30 -o SetupTimeout=240"
+    if lockfile -r 3 -l 3600 "${LOCK_BUILDD}"; then
+        ssh -q -q ${SSHOPT} wbadm@buildd /org/wanna-build/trigger.often
+    fi
+    rm -f "${LOCK_BUILDD}"
+}
+
+# used by cron.dinstall *and* cron.unchecked.
+function make_buildd_dir () {
+    local overridesuite
+    local suite
+
+    dak manage-build-queues -a
+    dak generate-packages-sources2 -a build-queues
+    dak generate-releases -a build-queues >/dev/null
+    ${scriptsdir}/update-buildd-archive ${base}/build-queues ${incoming}/debian-buildd
+
+    rm -f ${incoming}/public/*
+    dak export-suite -s "accepted" -d "$incoming/public"
+}
+
+# Process (oldstable)-proposed-updates "NEW" queue
+function punew_do() {
+    local queue="$1"
+    local qdir="$2"
+    local to="${3}"
+
+    date -u -R >> REPORT
+    dak process-policy "${queue}" | tee -a REPORT | mail -a "X-Debian: DAK" -e -s "NEW changes in ${queue}" "${to}" -- -F "Debian FTP Masters" -f ftpmaster@ftp-master.debian.org
+    echo >> REPORT
+
+    dak generate-packages-sources2 -s "${queue}"
+
+    STAMP=${STAMP:-$(date "+%Y%m%d%H%M")}
+
+    local exportdir="${qdir}/tree/${STAMP}"
+    local targetdir="${qdir}/export"
+    dak export -q "${queue}" -d "${exportdir}" --all
+    ln -sfT ${exportdir} ${targetdir}
+    find "${qdir}/tree" -mindepth 1 -maxdepth 1 -not -name "${STAMP}" -type d -print0 | xargs --no-run-if-empty -0 rm -rf
+}
+
+# These versions used in dinstall
+function punew() {
+    if [ "${PROGRAM}" = "dinstall" ]; then
+        log "Doing automated p-u-new processing"
+    fi
+    cd "${queuedir}/p-u-new"
+    punew_do "$1" "${queuedir}/p-u-new" "debian-release@lists.debian.org"
+}
+
+function opunew() {
+    if [ "${PROGRAM}" = "dinstall" ]; then
+        log "Doing automated o-p-u-new processing"
+    fi
+    cd "${queuedir}/o-p-u-new"
+    punew_do "$1" "${queuedir}/o-p-u-new" "debian-release@lists.debian.org"
+}
+
+function backports_policy() {
+    local queue="backports-policy"
+    local qdir="/srv/backports-master.debian.org/queue/policy"
+    local to="backports-team@debian.org"
+
+    if [ "${PROGRAM}" = "dinstall" ]; then
+        log "Doing automated ${queue} processing"
+    fi
+
+    cd "${qdir}"
+    punew_do "${queue}" "${qdir}" "${to}"
+}
+
+# Do the unchecked processing, in case we have files.
+function do_unchecked () {
+    cd $unchecked
+
+    changes=$(find . -maxdepth 1 -mindepth 1 -type f -name \*.changes | sed -e "s,./,," | xargs)
+    report=$queuedir/REPORT
+    timestamp=$(date "+%Y-%m-%d %H:%M")
+    UNCHECKED_WITHOUT_LOCK=${UNCHECKED_WITHOUT_LOCK:-""}
+
+    echo "$timestamp": ${changes:-"Nothing to do"}  >> $report
+    dak process-upload -a ${UNCHECKED_WITHOUT_LOCK} -d "$unchecked" >> $report
+    dak process-commands -d "$unchecked" >> $report
+}
+
+# process NEW policy queue
+function do_new () {
+    if [ "${PROGRAM}" = "dinstall" ]; then
+	log "Doing NEW processing"
+    fi
+    (dak process-policy new; dak process-policy byhand) | mail -a "X-Debian: DAK" -e -s "NEW and BYHAND processing" ftpmaster@ftp-master.debian.org -- -F "Debian FTP Masters" -f ftpmaster@ftp-master.debian.org
+
+    dak process-policy backports-new | mail -a "X-Debian: DAK" -e -s "NEW processing for backports-new" backports-team@debian.org -- -F "Debian FTP Masters" -f ftpmaster@ftp-master.debian.org
+
+    dak clean-suites -a new,backports-new
+}
+
+function sync_debbugs () {
+    # sync with debbugs
+    echo "--" >> $report
+    timestamp=$(date "+%Y-%m-%d-%H:%M")
+    mkdir -p $queuedir/bts_version_track_archive/${timestamp}
+    rsync -aq $queuedir/bts_version_track/ $queuedir/bts_version_track_archive/${timestamp}
+    rmdir --ignore-fail-on-non-empty $queuedir/bts_version_track_archive/${timestamp} # remove if empty.
+    rsync -aq -e "ssh -o Batchmode=yes -o ConnectTimeout=30 -o SetupTimeout=30" --remove-source-files  $queuedir/bts_version_track/ bugs-sync:/org/bugs.debian.org/versions/queue/ftp-master/ 2>/dev/null && touch $lockdir/synced_bts_version || true
+    NOW=$(date +%s)
+    TSTAMP=$(stat -c %Y $lockdir/synced_bts_version)
+    DIFF=$(( NOW - TSTAMP ))
+    if [ $DIFF -ge 259200 ]; then
+        log "Kids, you tried your best and you failed miserably. The lesson is, never try. (Homer Simpson)"
+    fi
+}
+
+function clean_debbugs () {
+    # Delete files older than 60 days
+    find $queuedir/bts_version_track_archive/ -mtime +60 -type f -delete
+    # Delete empty directories
+    find $queuedir/bts_version_track_archive/ -empty -type d -delete
+}
+
+function reports() {
+    # Send a report on NEW/BYHAND packages
+    log "Nagging ftpteam about NEW/BYHAND packages"
+    dak queue-report | mail -a "X-Debian: DAK" -e -s "NEW and BYHAND on $(date +%D)" ftpmaster@ftp-master.debian.org -- -F "Debian FTP Masters" -f ftpmaster@ftp-master.debian.org
+    dak queue-report -d backports-new,backports-policy | mail -a "X-Debian: DAK" -e -s "NEW and POLICY on $(date +%D)" backports-team@debian.org -- -F "Debian FTP Masters" -f ftpmaster@ftp-master.debian.org
+    # and one on crufty packages
+    log "Sending information about crufty packages"
+    dak cruft-report -R > $webdir/cruft-report-daily.txt
+    dak cruft-report -R -s experimental >> $webdir/cruft-report-daily.txt
+    cat $webdir/cruft-report-daily.txt | mail -a "X-Debian: DAK" -e -s "Debian archive cruft report for $(date +%D)" ftpmaster@ftp-master.debian.org -- -F "Debian FTP Masters" -f ftpmaster@ftp-master.debian.org
+}
+
+function pg_timestamp() {
+    tsname=${1:-"unknown"}
+    log "Saving postgres transaction id for ${tsname}"
+    psql -tAc 'select txid_current();' > $base/backup/txid_${tsname}_$(date +%Y.%m.%d-%H:%M:%S)
+}
+
+function get_archiveroot() {
+    local archivename="$1"
+    local query="SELECT path FROM archive WHERE name='${archivename}'"
+    local archiveroot="$(psql -tAc "${query}")"
+    if [ -z "${archiveroot}" ]; then
+        echo "get_archiveroot: couldn't get archiveroot for '${archivename}'" >&2
+        return 1
+    fi
+    echo "${archiveroot}"
+}

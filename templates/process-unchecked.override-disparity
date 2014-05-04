@@ -1,0 +1,51 @@
+From: __DAK_ADDRESS__
+To: __MAINTAINER_TO__
+__BCC__
+X-Debian: DAK
+X-Debian-Package: __SOURCE__
+Precedence: junk
+Auto-Submitted: auto-generated
+MIME-Version: 1.0
+Content-Type: text/plain; charset="utf-8"
+Content-Transfer-Encoding: 8bit
+Subject: __SOURCE__ override disparity
+
+There are disparities between your recently accepted upload and the
+override file for the following file(s):
+
+__SUMMARY__
+
+Please note that a list of new sections were recently added to the
+archive: cli-mono, database, debug, fonts, gnu-r, gnustep, haskell,
+httpd, java, kernel, lisp, localization, ocaml, php, ruby, vcs, video,
+xfce, zope.  At this time a script was used to reclassify packages into
+these sections.  If this is the case, please only reply to this email if
+the new section is inappropriate, otherwise please update your package
+at the next upload.
+
+Either the package or the override file is incorrect.  If you think
+the override is correct and the package wrong please fix the package
+so that this disparity is fixed in the next upload.  If you feel the
+override is incorrect then please file a bug against ftp.debian.org and
+explain why. Please INCLUDE the list of packages as seen above, or we
+won't be able to deal with your request due to missing information.
+
+Please make sure that the subject of the bug you file follows the
+following format:
+
+Subject: override: BINARY1:section/priority, [...], BINARYX:section/priority
+
+Include the justification for the change in the body of the mail please.
+
+
+[NB: this is an automatically generated mail; if you already filed a bug
+and have not received a response yet, please ignore this mail.  Your bug
+needs to be processed by a human and will be in due course, but until
+then the installer will send these automated mails; sorry.]
+
+--
+__DISTRO__ distribution maintenance software
+
+(This message was generated automatically; if you believe that there
+is a problem with it please contact the archive administrators by
+mailing __ADMIN_ADDRESS__)

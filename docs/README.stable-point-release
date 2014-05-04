@@ -1,0 +1,155 @@
+Rough Guide to doing Stable Point Releases in Debian
+----------------------------------------------------
+
+- sudo to dak
+- bash:
+suite=stable
+suitename=wheezy
+pusuite=proposed-updates
+oldrev=7.4
+newrev=7.5
+export SCRIPTVARS=/srv/ftp-master.debian.org/dak/config/debian/vars
+. $SCRIPTVARS
+. "${configdir}/common"
+. "${configdir}/dinstall.functions"
+umask 022
+export LANG=C
+export LC_ALL=C
+pg_timestamp pre_${suite}_${newrev}
+cd ~
+mkdir -p ${suite}_${newrev}
+cd ${suite}_${newrev}
+dak control-suite -l ${pusuite} > ${pusuite}.list
+dak control-suite -l ${suite} > ${suite}.list
+
+- ask SRMs if there is anything to be skipped from this release. If so
+  edit ${pusuite}.list (and later the Changelog too)
+- bash:
+dak make-changelog -s ${pusuite} -b ${suite} | cat - ${ftpdir}/dists/${suite}/ChangeLog | sponge ${ftpdir}/dists/${suite}/ChangeLog
+dak control-suite --add ${suite} < ${pusuite}.list
+dak control-suite --remove ${pusuite} < ${pusuite}.list
+
+- clean up *.changes from proposed-updates:
+# Be careful if uploads were not included in the point release.
+pumorguedir="${base}/morgue/queues/$(date +%Y/%m)"
+mkdir -p "${pumorguedir}"
+cd ${ftpdir}/dists/${pusuite}
+mv -t "${pumorguedir}" -n -- *.changes
+
+- -r0 additions?
+  For example new d-i. If so:
+cd ~/${suite}_${newrev}
+cp /srv/release.debian.org/www/${suitename}/${newrev%%.*}/${newrev}/${suitename}-r0-additions.cs .
+dak control-suite --add ${suitename}-r0 < ${suitename}-r0-additions.cs
+
+- sync with stable RM if there is any propup needed. do it, if so:
+like, cat /srv/release.debian.org/www/squeeze/6.0/6.0.4/propup.unstable | dak control-suite --add unstable
+Note: unstable first, then testing
+- ask rms if they have RMs to do.
+- and then check if they have a d-i update. if so, bash:
+# set dioldver to "empty" if there is no old to remove
+diver=20130613+deb7u2+b1
+dak copy-installer -s ${pusuite} -d ${suite} ${diver}
+dioldver=20130613+deb7u1+b2
+cd $ftpdir/dists/${suite}/main
+if [ "${dioldver}" != "empty" ]; then
+    for iarch in $(dak admin s-a list-arch ${suite}); do
+        if [ -d "installer-${iarch}/${dioldver}" ]; then
+            echo "Moving installer-${iarch}/${dioldver} to morgue"
+            mkdir -p "${base}/morgue/d-i/installer-${iarch}/"
+            mv "installer-${iarch}/${dioldver}" "${base}/morgue/d-i/installer-${iarch}/"
+        fi
+    done
+fi
+cd $ftpdir/dists/${suite}
+
+- Updates for win32-loader?
+cd ${ftpdir}/tools/win32-loader
+if [ -d ${suitename}-proposed-updates ]; then
+    rm -r ${suite}
+    mv ${suitename}-proposed-updates ${suite}
+fi
+cd ${ftpdir}
+
+- Update version number in README, README.html and dists/README,
+  Clean up dists/stable/ChangeLog (add header, basically). bash:
+  $EDITOR ChangeLog ../README ../../README*
+  rm -f *~ ../*~ ../../*~
+
+- Update the 'Debian<n>.<n>r<n>' symlink in dists/
+cd $ftpdir/dists/
+rm -f Debian${oldrev}
+ln -s ${suitename} Debian${newrev}
+
+- Update fields in suite table in postgresql.
+  bash:
+
+mdate=$(date +"%d %B %Y")
+psql projectb <<EOF
+begin;
+update suite set version = '${newrev}' where suite_name = '${suite}';
+update suite set description = 'Debian ${newrev} Released ${mdate}' where suite_name = '${suite}';
+commit;
+EOF
+
+- prepare for gps. bash:
+dak dominate --force -s ${suite}
+- check output from cruft report:
+dak cruft-report -s ${suite}
+
+dak generate-filelist -s ${suite}
+
+- Let SRM see if all is ok
+
+- then:
+if [ "${suitename}" = "squeeze" ]; then
+  dak generate-packages-sources -s ${suite} && dak contents generate -f -s ${suite} -a ftp-master
+else
+  dak generate-packages-sources2 --force -s ${suite} && dak contents generate -f -s ${suite} -a ftp-master
+fi
+
+- For squeeze: merge Contents
+if [ "${suitename}" = "squeeze" ]; then
+  cd $ftpdir/dists/${suite}
+  for carch in $(dak admin s-a list-arch ${suite}); do
+    echo doing ${carch}
+    cp $base/dak/templates/contents Contents-${carch}.new;
+    zcat {main,contrib,non-free}/Contents-${carch}.gz | ~joerg/mergecontents.pl | sort >> Contents-${carch}.new;
+    gzip -9v Contents-${carch}.new;
+    mv Contents-${carch}.new.gz Contents-${carch}.gz;
+  done
+  rm {main,contrib,non-free}/Contents-*
+fi
+
+- For wheezy: update main/i18n/Index
+if [ "${suitename}" = "wheezy" ]; then
+  ${scriptsdir}/generate-i18n-Index "${ftpdir}/dists/${suite}"
+fi
+
+- Generate Releases:
+dak generate-releases -f -s ${suite}
+rm ${ftpdir}/dists/${suite}/InRelease
+
+- have the SRMs sign it and put the signature in.
+- Check if a mirror push is needed or next dinstall is enough. for a push
+o if so, bash:
+
+TRACEFILE="${ftpdir}/project/trace/ftp-master.debian.org"
+DATE_SERIAL=$(date +"%Y%m%d01")
+FILESOAPLUS1=$(awk '/serial/ { print $3+1 }' ${TRACEFILE} )
+if [ "$DATE_SERIAL" -gt "$FILESOAPLUS1" ]; then
+    SERIAL="$DATE_SERIAL"
+else
+    SERIAL="$FILESOAPLUS1"
+fi
+date -u > ${TRACEFILE}
+echo "Using dak v1" >> ${TRACEFILE}
+echo "Running on host: $(hostname -f)" >> ${TRACEFILE}
+echo "Archive serial: ${SERIAL}" >> ${TRACEFILE}
+cd ${mirrordir}
+rsync -aH --link-dest ${ftpdir} --delete --delete-after --ignore-errors ${ftpdir}/. .
+date -u > /srv/ftp.debian.org/web/mirrorstart
+echo "Using dak v1" >> /srv/ftp.debian.org/web/mirrorstart
+echo "Running on host $(hostname -f)" >> /srv/ftp.debian.org/web/mirrorstart
+sudo -H -u archvsync /home/archvsync/runmirrors > ~dak/runmirrors.log 2>&1 &
+

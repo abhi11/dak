@@ -1,0 +1,60 @@
+#! /bin/bash
+#
+# Executed after cron.unchecked
+
+set -e
+set -o pipefail
+set -u
+
+export SCRIPTVARS=/srv/security-master.debian.org/dak/config/debian-security/vars
+. $SCRIPTVARS
+SSH_SOCKET=~/.ssh/buildd.debian.org.socket
+DISTS="oldstable stable"
+
+if [ -e $ftpdir/Archive_Maintenance_In_Progress ]; then
+    exit 0
+fi
+
+dists=
+now=$(date +%s)
+check=$(( now - 3*60 ))
+
+for dist in $DISTS; do
+    smodtime=$(stat -c "%Y" $base/build-queues/dists/buildd-$dist/updates/*/source/Sources.gz | sort -n | tail -1)
+    pmodtime=$(stat -c "%Y" $base/build-queues/dists/buildd-$dist/updates/*/binary-*/Packages.gz | sort -n | tail -1)
+
+    if [ ${smodtime} -gt ${check} ] || [ ${pmodtime} -gt ${check} ]; then
+        # Packages/Sources changed in the last minutes
+        dists="${dists} ${dist}"
+    else
+        continue
+    fi
+done
+
+if [ ! -z "${dists}" ]; then
+    # setup ssh master process
+    ssh wbadm@buildd -S $SSH_SOCKET -MN 2> /dev/null &
+    SSH_PID=$!
+    while [ ! -S $SSH_SOCKET ]; do
+        sleep 1
+    done
+    trap 'kill -TERM $SSH_PID' 0
+    for d in ${dists}; do
+        case ${d} in
+            oldstable)
+                send=squeeze
+                ;;
+            stable)
+                send=wheezy
+                ;;
+            testing)
+                send=jessie
+                ;;
+            *)
+                send=unknown
+                ;;
+        esac
+
+        ssh wbadm@buildd -S $SSH_SOCKET trigger.security $send
+    done
+fi

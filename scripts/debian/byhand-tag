@@ -1,0 +1,65 @@
+#!/bin/bash
+
+set -u
+set -e
+set -o pipefail
+
+export SCRIPTVARS=/srv/ftp-master.debian.org/dak/config/debian/vars
+. $SCRIPTVARS
+
+# Tarball to read, compressed with gzip
+INPUT="${1:?"Usage: $0 filename"}"
+
+# Regular expression used to validate tag lines
+CHECKRE='^([a-z0-9A-Z.+-]+[[:space:]]+Tag)?[[:space:]]+[A-Za-z0-9:. ,{}+-]+$'
+
+# This must end with /
+TARGET=/srv/ftp-master.debian.org/scripts/external-overrides/
+
+# Read the main directory from the tarball
+DIR="`tar ztf \"$INPUT\" | tail -n 1 | cut -d/ -f1`"
+
+# Create temporary files where to store the validated data
+umask 002
+OUTMAIN="`mktemp \"$TARGET\"tag.new.XXXXXX`"
+OUTCONTRIB="`mktemp \"$TARGET\"tag.contrib.new.XXXXXX`"
+OUTNONFREE="`mktemp \"$TARGET\"tag.non-free.new.XXXXXX`"
+
+# If we fail somewhere, cleanup the temporary files
+cleanup() {
+        rm -f "$OUTMAIN"
+        rm -f "$OUTCONTRIB"
+        rm -f "$OUTNONFREE"
+}
+trap cleanup EXIT
+
+# Extract the data into the temporary files
+tar -O -zxf "$INPUT" "$DIR"/tag > "$OUTMAIN"
+tar -O -zxf "$INPUT" "$DIR"/tag.contrib > "$OUTCONTRIB"
+tar -O -zxf "$INPUT" "$DIR"/tag.non-free > "$OUTNONFREE"
+
+# check temporary files for invalid contents
+status=0
+grep -vq -E "$CHECKRE" "$OUTMAIN" "$OUTCONTRIB" "$OUTNONFREE" || status=$?
+# checking just $? != 0 is not enough. grep can return 2 on other errors.
+if [ $status != 1 ]; then
+        echo "Aborting automatic import (invalid data found)." >&2
+        exit 1
+fi
+
+# Move the data to the final location
+mv "$OUTMAIN"           "$TARGET"tag
+mv "$OUTCONTRIB"        "$TARGET"tag.contrib
+mv "$OUTNONFREE"        "$TARGET"tag.non-free
+
+chmod 644 "$TARGET"tag "$TARGET"tag.contrib "$TARGET"tag.non-free
+
+(cd "$TARGET" \
+  && dak external-overrides import unstable main Tag <tag \
+  && dak external-overrides import unstable contrib Tag <tag.contrib \
+  && dak external-overrides import unstable non-free Tag <tag.non-free)
+dak external-overrides copy unstable testing
+
+trap - EXIT
+
+exit 0
