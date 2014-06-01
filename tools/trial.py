@@ -3,49 +3,59 @@
 ## Trial code. Checks the apper deb package for appdata xml
 
 from apt import debfile 
-import xml.etree.ElementTree as et
-from xml import etree
+import lxml.etree as et
 
 x = debfile.DebPackage('apper_0.8.2-2_alpha.deb')
 lof = x.filelist
-for control_file in lof:
-    if 'xml' in control_file:
-        xml_content = x.data_content(control_file) 
-root = et.fromstring(xml_content)
-of = open("com.yml","w")
-dic = root.attrib
-of.write("Type: "+dic['type'])
-of.write("\n")
+for meta_file in lof:
+    #change to regex
+    if 'xml' in meta_file:
+        xml_content = str(x.data_content(meta_file))
 
-#tree traversal, better formatting needed
-def recurseprint(subs):
-    for psubs in subs:
-        of.write("<"+psubs.tag+">"+psubs.text)
-        recurseprint(psubs)
-        of.write("</"+psubs.tag+">\n")
+
+root = et.fromstring(xml_content)
+
+dic = {'Type':root.attrib['type']}
 
 for subs in root:
     if subs.tag == 'id':
-        of.write("ID: "+subs.text)
-        of.write("\n")
+        dic.update({'ID':subs.text})
 
     elif subs.tag == "description":
-        of.write("Description: \n")
-        recurseprint(subs)
+        desc = xml_content[xml_content.find('<description>'):xml_content.find('</description>')]
+        desc = desc.replace('<description>','')
+        dic.update({'Description':desc})
 
     #does the screenshots well but needs to be more generalised
     elif subs.tag == "screenshots":
+        dic['Screenshots'] = {}
         for shots in subs:
-            dic = shots.attrib
-            of.write("Screenshots: \n")
-            of.write("   "+dic['type']+":\n")
-            of.write("      width: "+dic['width']+"\n")
-            of.write("      height: "+dic['height']+"\n")            
-            of.write("      url: "+shots.text+"\n")
-        
-    else:
-        of.write("\n")
-        of.write(subs.tag.title()+": "+subs.text)
-        of.write("\n")
+            attr_dic = shots.attrib
+            dic['Screenshots'].update({attr_dic['type']:[{'width': attr_dic['width']},{'height': attr_dic['height']},{'url':shots.text}]})
 
-of.close()
+    elif subs.tag == "provides":
+        dic['Provides'] = {}
+        for bins in subs:
+            if bins.tag == "binary":
+                try : 
+                    dic['Provides']['binaries'].append(bins.text)
+                except KeyError:
+                    dic['Provides']['binaries']=[bins.text]
+            if bins.tag == 'library':
+                try : 
+                    dic['Provides']['libraries'].append(bins.text)
+                except KeyError:
+                    dic['Provides']['libraries']=[bins.text]           
+
+    elif subs.tag == "url":
+        try:
+            dic["Url"].update({subs.attrib['type'].title():subs.text})
+        except KeyError:
+            dic["Url"] = {subs.attrib['type'].title():subs.text}
+
+                
+    else:
+        dic[subs.tag.title()]=subs.text
+
+#Work with the dic to create yml
+print dic
