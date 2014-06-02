@@ -4,9 +4,11 @@
 
 from apt import debfile 
 import lxml.etree as et
+import yaml
 
 x = debfile.DebPackage('apper_0.8.2-2_alpha.deb')
 lof = x.filelist
+print lof
 for meta_file in lof:
     #change to regex
     if 'xml' in meta_file:
@@ -24,7 +26,9 @@ for subs in root:
     elif subs.tag == "description":
         desc = xml_content[xml_content.find('<description>'):xml_content.find('</description>')]
         desc = desc.replace('<description>','')
-        dic.update({'Description':desc})
+        desc = desc.strip()
+        desc = " ".join(desc.split())
+        dic.update({'Description':'  '+desc})
 
     #does the screenshots well but needs to be more generalised
     elif subs.tag == "screenshots":
@@ -58,4 +62,9 @@ for subs in root:
         dic[subs.tag.title()]=subs.text
 
 #Work with the dic to create yml
-print dic
+metadata = yaml.dump(dic,default_flow_style=False,explicit_start=False,width=100)
+ofile = open("com.yml","w")
+ofile.write(metadata)
+ofile.close()
+
+#print dic
