@@ -24,24 +24,73 @@ def notcomment(line):
                 return None
 
 def read_desktop(dcontent):
-        '''Convert a .desktop file into a dict'''
-        ##change Name tag to Summary and make a list with different langs Name[lang]
-        ## and also change the semi-colons in Categories to commas
-        contents = {}
-        lines = dcontent.splitlines()
-        for line in lines:
-                #first check if line is a comment
-                line = notcomment(line)
-                if line:
-                    #spliting into key-value pairs
-                    tray = line.split("=",1)
-                    try:
-                        contents[str(tray[0].strip())] = str(tray[1].strip())
-                    except:
-                        pass
-        return contents
-    
+    '''Convert a .desktop file into a dict'''
+    #Handles MimeType Keywords Comment Name
 
+    contents = {}
+    lines = dcontent.splitlines()
+    for line in lines:
+        #first check if line is a comment
+        line = notcomment(line)
+        if line:
+            #spliting into key-value pairs
+            tray = line.split("=",1)
+            try:
+                key = str(tray[0].strip())
+                value = str(tray[1].strip())
+                
+                if 'Name' in key:
+                    if key[4:] == '':
+                        try:
+                            contents['Name'].append({'C':value})
+                        except KeyError:
+                            contents['Name'] = [{'C':value}]
+                    else:
+                        try:
+                            contents['Name'].append({key[5:-1]:value})
+                        except KeyError:
+                            contents['Name'] = [{key[5:-1]:value}]
+                                
+                elif key == 'Categories':
+                    value = value.replace(';',',')
+                    contents['Categories'] = value
+
+                elif 'Comment' in key:
+                    if key[7:] == '':
+                        try:
+                            contents['Summary'].append({'C':value})
+                        except KeyError:
+                            contents['Summary'] = [{'C':value}]
+                    else:
+                        try:
+                            contents['Summary'].append({key[8:-1]:value})
+                        except KeyError:
+                            contents['Summary'] = [{key[8:-1]:value}]
+
+                elif 'Keywords' in key:
+                    if key[8:] == '':
+                        try:
+                            contents['Keywords'].append({'C':value})
+                        except KeyError:
+                            contents['Keywords'] = [{'C':value}]
+                    else:
+                        try:
+                            contents['Keywords'].append({key[9:-1]:value})
+                        except KeyError:
+                            contents['Keywords'] = [{key[9:-1]:value}]
+                    
+
+                elif key == 'MimeType':
+                    val_list = value[0:-1].split(';')
+                    contents['MimeTypes'] = val_list
+
+                else:
+                    contents[key] = value
+
+            except:
+                pass
+    return contents
+                    
 for meta_file in lof:
     #change to regex
     if 'xml' in meta_file:
@@ -84,9 +133,9 @@ for meta_file in lof:
 
             if subs.tag == "url":
                 try:
-                    dic["Url"].update({subs.attrib['type'].title():subs.text})
+                    dic["Url"].append({subs.attrib['type'].title():subs.text})
                 except KeyError:
-                    dic["Url"] = {subs.attrib['type'].title():subs.text}
+                    dic["Url"] = [{subs.attrib['type'].title():subs.text}]
 
             if subs.tag == "project_license":
                 dic['ProjectLicense'] = subs.text
@@ -95,10 +144,8 @@ for meta_file in lof:
                 dic['ProjectGroup'] = subs.text
             
         if( '.desktop' in dic["ID"]):
-            print dic["ID"]
             for dfile in lof:
                 if '.desktop' in dfile :
-                    print dfile
                     dcontent = x.data_content(dfile)
                     #print dcontent
                     dic.update(read_desktop(dcontent))
