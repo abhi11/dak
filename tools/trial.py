@@ -1,107 +1,116 @@
 #!/usr/bin/env python
 
-## Trial code. Checks the apper deb package for appdata xml
+'''Takes a .deb file as an argument and reads the metadata from diffrent sources
+   such as the xml files in usr/share/appdata and .desktop files in usr/share/
+'''
 
 from apt import debfile 
 import lxml.etree as et
 import yaml
 
-x = debfile.DebPackage('apper_0.8.2-2_alpha.deb')
-lof = x.filelist
-#print lof
 
-def notcomment(line):
-        line = line.strip()
-        if line != '':
-                if line[0]=="#":
-                        return None
+
+class Content:
+
+        def __init__(self,filename):
+                '''Initialize the object with List of files'''                
+                self.x = debfile.DebPackage(filename)
+                self.lof = self.x.filelist
+
+        def notcomment(self,line=None):
+                '''checks whether a line is a comment on .desktop file'''
+                line = line.strip()
+                if line != '':
+                        if line[0]=="#":
+                                return None
+                        else:
+                                #when there's a comment inline
+                                if "#" in line:
+                                        line = line[0:line.find("#")]
+                                return line
                 else:
-                        #when there's a comment inline
-                        if "#" in line:
-                                line = line[0:line.find("#")]
-                        return line
-        else:
-                return None
+                        return None
 
-def read_desktop(dcontent):
-    '''Convert a .desktop file into a dict'''
-    #Handles MimeType Keywords Comment Name
+        def read_desktop(self,dcontent=None):
+                '''Convert a .desktop file into a dict'''
+                #Handles MimeType Keywords Comment Name
 
-    contents = {}
-    lines = dcontent.splitlines()
+                contents = {}
+                lines = dcontent.splitlines()
     
-    for line in lines:
-        #first check if line is a comment
-        line = notcomment(line)
-        if line:
-        #spliting into key-value pairs
-           tray = line.split("=",1)
+                for line in lines:
+                        #first check if line is a comment
+                        line = self.notcomment(line)
+                        if line:
+                                #spliting into key-value pairs
+                                tray = line.split("=",1)
                 
-           try:
-                key = str(tray[0].strip())
-                value = str(tray[1].strip())
-                
-                if key.startswith('Name') :
-                    if key[4:] == '':
-                        try:
-                            contents['Name'].append({'C':value})
-                        except KeyError:
-                            contents['Name'] = [{'C':value}]
-                    else:
-                        try:
-                            contents['Name'].append({key[5:-1]:value})
-                        except KeyError:
-                            contents['Name'] = [{key[5:-1]:value}]
+                                try:
+                                        key = str(tray[0].strip())
+                                        value = str(tray[1].strip())
+                                        #Ignore the file if NoDisplay is true
+                                        if key == 'NoDisplay' and value == 'True':
+                                                return None
+
+                                        if key.startswith('Name') :
+                                                if key[4:] == '':
+                                                        try:
+                                                                contents['Name'].append({'C':value})
+                                                        except KeyError:
+                                                                contents['Name'] = [{'C':value}]
+                                                else:
+                                                        try:
+                                                                contents['Name'].append({key[5:-1]:value})
+                                                        except KeyError:
+                                                                contents['Name'] = [{key[5:-1]:value}]
                                                     
-                if key == 'Categories':
-                        value = value.replace(';',',')
-                        contents['Categories'] = value
+                                        if key == 'Categories':
+                                                value = value.replace(';',',')
+                                                contents['Categories'] = value
 
-                if key.startswith('Comment'):
-                        if key[7:] == '':
-                                try:
-                                        contents['Summary'].append({'C':value})
-                                except KeyError:
-                                        contents['Summary'] = [{'C':value}]
-                        else:
-                                try:
-                                        contents['Summary'].append({key[8:-1]:value})
-                                except KeyError:
-                                        contents['Summary'] = [{key[8:-1]:value}]
+                                        if key.startswith('Comment'):
+                                                if key[7:] == '':
+                                                        try:
+                                                                contents['Summary'].append({'C':value})
+                                                        except KeyError:
+                                                                contents['Summary'] = [{'C':value}]
+                                                else:
+                                                        try:
+                                                                contents['Summary'].append({key[8:-1]:value})
+                                                        except KeyError:
+                                                                contents['Summary'] = [{key[8:-1]:value}]
 
-                if 'Keywords' in key:
-                        if key[8:] == '':
-                                try:
-                                        contents['Keywords'].append({'C':value})
-                                except KeyError:
-                                        contents['Keywords'] = [{'C':value}]
-                        else:
-                                try:
-                                        contents['Keywords'].append({key[9:-1]:value})
-                                except KeyError:
-                                        contents['Keywords'] = [{key[9:-1]:value}]
+                                        if 'Keywords' in key:
+                                                if key[8:] == '':
+                                                        try:
+                                                                contents['Keywords'].append({'C':value})
+                                                        except KeyError:
+                                                                contents['Keywords'] = [{'C':value}]
+                                                else:
+                                                        try:
+                                                                contents['Keywords'].append({key[9:-1]:value})
+                                                        except KeyError:
+                                                                contents['Keywords'] = [{key[9:-1]:value}]
                                                 
-                if key == 'MimeType':
-                        val_list = value[0:-1].split(';')
-                        contents['MimeTypes'] = val_list
+                                        if key == 'MimeType':
+                                                val_list = value[0:-1].split(';')
+                                                contents['MimeTypes'] = val_list
 
-                if 'Architectures' in key:
-                        val_list = value.split(',')
-                        contents['Architectures'] = val_list
+                                        if 'Architectures' in key:
+                                                val_list = value.split(',')
+                                                contents['Architectures'] = val_list
 
-                if key == 'Icon':
-                        contents[key] = value
+                                        if key == 'Icon':
+                                                contents[key] = value
                         
-           except:
-                pass
-    return contents
-                
-for meta_file in lof:
-        #change to regex
-        if 'xml' in meta_file:
-                xml_content = str(x.data_content(meta_file))
-                root = et.fromstring(xml_content)
+                                except:
+                                        pass
+                return contents
+        
+        def read_xml(self,xml_content=None):
+                ''' Reads the appdata from the xml file in usr/share/appdata '''
 
+                root = et.fromstring(xml_content)
                 dic = {'Type':root.attrib['type']}
 
                 for subs in root:
@@ -115,13 +124,14 @@ for meta_file in lof:
                                 desc = " ".join(desc.split())
                                 dic.update({'Description':'  '+desc})
 
-                        #does the screenshots well but needs to be more generalised
+                        #does the screenshots well
                         if subs.tag == "screenshots":
                                 dic['Screenshots'] = {}
                                 for shots in subs:
                                         attr_dic = shots.attrib
-                                        dic['Screenshots'].update({attr_dic['type']:[{'width': attr_dic['width']},{'height': attr_dic['height']},{'url':shots.text}]})
-
+                                        dic['Screenshots'].update({attr_dic['type']:[{'width': attr_dic['width']},
+                                                                                             {'height': attr_dic['height']},{'url':shots.text}]})
+                        #needs changes provide's a bit tricky !!
                         if subs.tag == "provides":
                                 dic['Provides'] = {}
                                 for bins in subs:
@@ -131,11 +141,11 @@ for meta_file in lof:
                                                 except KeyError:
                                                         dic['Provides']['binaries']=[bins.text]
                                         if bins.tag == 'library':
-                                                    try : 
-                                                            dic['Provides']['libraries'].append(bins.text)
-                                                    except KeyError:
-                                                            dic['Provides']['libraries']=[bins.text]           
-
+                                                try : 
+                                                        dic['Provides']['libraries'].append(bins.text)
+                                                except KeyError:
+                                                        dic['Provides']['libraries']=[bins.text]           
+                                                                                                        
                         if subs.tag == "url":
                                 try:
                                         dic["Url"].append({subs.attrib['type'].title():subs.text})
@@ -147,34 +157,47 @@ for meta_file in lof:
 
                         if subs.tag == "project_group":
                                 dic['ProjectGroup'] = subs.text
-                    
-                if( '.desktop' in dic["ID"]):
-                        for dfile in lof:
-                                if '.desktop' in dfile :
-                                        print dfile
-                                        dcontent = x.data_content(dfile)
-                                        #print dcontentn
-                                        contents  = read_desktop(dcontent)
-                                        for k,v in contents.iteritems():
-                                                #Avoids repetition of the same Field Values
-                                                try :
-                                                        if str(type(dic[k])) == "<type 'list'>":
-                                                                if v in dic[k]:
-                                                                        continue
-                                                        #in case it is not a list it is handlesd in the following except
-                                                        dic[k].append(v)
-                                                except :
-                                                        try:
-                                                                prev = dic[k]
-                                                                if prev != v:
-                                                                        dic[k] = [prev,v]
-                                                        except KeyError:
-                                                                dic[k] = [v]
+                return dic        
 
-                #Work with the dic to create yml
-                metadata = yaml.dump(dic,default_flow_style=False,explicit_start=False,width=100)
+                
+        def read_metadata(self):
+                '''Reads the metadata from the xml file and the desktop files '''
                 ofile = open("com.yml","w")
-                ofile.write(metadata)
+                for meta_file in self.lof:
+                        #change to regex
+                        if 'xml' in meta_file:
+                                xml_content = str(self.x.data_content(meta_file))
+                                dic = self.read_xml(xml_content)
+                                #Reads the desktop files associated with the xml file
+                                if( '.desktop' in dic["ID"]):
+                                        for dfile in self.lof:
+                                                #for desktop file matching the ID
+                                                if dic['ID'] in dfile :
+                                                        print dfile
+                                                        dcontent = self.x.data_content(dfile)
+                                                        #print dcontentn
+                                                        contents  = self.read_desktop(dcontent)
+                                                        if contents :
+                                                                #overwriting the Type field of .desktop by xml
+                                                                contents['Type'] = dic['Type']
+                                                                dic.update(contents)
+                                                        #Work with the dic to create yml
+                                                        metadata = yaml.dump(dic,default_flow_style=False,explicit_start=False,explicit_end=True,width=100)
+                                                        ofile.write(metadata)
+                                                elif '.desktop' in dfile :
+                                                        print dfile
+                                                        dcontent = self.x.data_content(dfile)
+                                                        #print dcontentn
+                                                        contents  = self.read_desktop(dcontent)
+                                                        if contents:
+                                                                metadata = yaml.dump(contents,default_flow_style=False,explicit_start=False,
+                                                                                     explicit_end=True,width=100)                                                                
+                                                                ofile.write(metadata)
+                                                else:
+                                                        #if dfile is not a desktop file
+                                                        continue
                 ofile.close()
 
-#print dic
+if __name__ == "__main__":
+        obj = Content('apper_0.8.2-2_alpha.deb')
+        obj.read_metadata()
