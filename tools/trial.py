@@ -12,7 +12,7 @@ lof = x.filelist
 
 def notcomment(line):
         line = line.strip()
-        try:
+        if line != '':
                 if line[0]=="#":
                         return None
                 else:
@@ -20,7 +20,7 @@ def notcomment(line):
                         if "#" in line:
                                 line = line[0:line.find("#")]
                         return line
-        except:
+        else:
                 return None
 
 def read_desktop(dcontent):
@@ -41,7 +41,7 @@ def read_desktop(dcontent):
                 key = str(tray[0].strip())
                 value = str(tray[1].strip())
                 
-                if 'Name' in key and not ( 'GenericName' in key ) :
+                if key.startswith('Name') :
                     if key[4:] == '':
                         try:
                             contents['Name'].append({'C':value})
@@ -57,7 +57,7 @@ def read_desktop(dcontent):
                         value = value.replace(';',',')
                         contents['Categories'] = value
 
-                if 'Comment' in key:
+                if key.startswith('Comment'):
                         if key[7:] == '':
                                 try:
                                         contents['Summary'].append({'C':value})
