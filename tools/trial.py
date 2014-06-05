@@ -8,19 +8,28 @@ from apt import debfile
 import lxml.etree as et
 import yaml
 
+def make_num(s):
+        '''Returns integer if the str is a digit
+        else returns the str'''
+        try:
+                num = int(s)
+                return num
+        except ValueError:
+                return s
+        
 
 
 class Content:
 
         def __init__(self,filename):
                 '''Initialize the object with List of files'''                
-                self.x = debfile.DebPackage(filename)
-                self.lof = self.x.filelist
+                self._deb = debfile.DebPackage(filename)
+                self._lof = self._deb.filelist
 
         def notcomment(self,line=None):
                 '''checks whether a line is a comment on .desktop file'''
                 line = line.strip()
-                if line != '':
+                if line:
                         if line[0]=="#":
                                 return None
                         else:
@@ -129,8 +138,9 @@ class Content:
                                 dic['Screenshots'] = {}
                                 for shots in subs:
                                         attr_dic = shots.attrib
-                                        dic['Screenshots'].update({attr_dic['type']:[{'width': attr_dic['width']},
-                                                                                             {'height': attr_dic['height']},{'url':shots.text}]})
+                                        dic['Screenshots'].update({attr_dic['type']:[{'width': make_num(attr_dic['width'])},
+                                                                                             {'height': make_num(attr_dic['height'])},{'url':shots.text}]})
+
                         #needs changes provide's a bit tricky !!
                         if subs.tag == "provides":
                                 dic['Provides'] = {}
@@ -161,43 +171,40 @@ class Content:
 
                 
         def read_metadata(self):
-                '''Reads the metadata from the xml file and the desktop files '''
-                ofile = open("com.yml","w")
-                for meta_file in self.lof:
+                '''Reads the metadata from the xml file and the desktop files.
+                And returns a list of dict with the component data.'''
+
+                cont_list = []
+                for meta_file in self._lof:
                         #change to regex
                         if 'xml' in meta_file:
-                                xml_content = str(self.x.data_content(meta_file))
+                                xml_content = str(self._deb.data_content(meta_file))
                                 dic = self.read_xml(xml_content)
                                 #Reads the desktop files associated with the xml file
                                 if( '.desktop' in dic["ID"]):
-                                        for dfile in self.lof:
+                                        for dfile in self._lof:
                                                 #for desktop file matching the ID
                                                 if dic['ID'] in dfile :
-                                                        print dfile
-                                                        dcontent = self.x.data_content(dfile)
-                                                        #print dcontentn
+                                                        dcontent = self._deb.data_content(dfile)
                                                         contents  = self.read_desktop(dcontent)
                                                         if contents :
                                                                 #overwriting the Type field of .desktop by xml
                                                                 contents['Type'] = dic['Type']
                                                                 dic.update(contents)
-                                                        #Work with the dic to create yml
-                                                        metadata = yaml.dump(dic,default_flow_style=False,explicit_start=False,explicit_end=True,width=100)
-                                                        ofile.write(metadata)
+                                                        cont_list.append(dic)
+
                                                 elif '.desktop' in dfile :
-                                                        print dfile
-                                                        dcontent = self.x.data_content(dfile)
-                                                        #print dcontentn
+                                                        dcontent = self._deb.data_content(dfile)
                                                         contents  = self.read_desktop(dcontent)
                                                         if contents:
-                                                                metadata = yaml.dump(contents,default_flow_style=False,explicit_start=False,
-                                                                                     explicit_end=True,width=100)                                                                
-                                                                ofile.write(metadata)
+                                                                cont_list.append(contents)
                                                 else:
                                                         #if dfile is not a desktop file
                                                         continue
-                ofile.close()
+                return cont_list
 
 if __name__ == "__main__":
         obj = Content('apper_0.8.2-2_alpha.deb')
-        obj.read_metadata()
+        li_to_wr = obj.read_metadata()
+        for dic in li_to_wr:
+                yaml.dump(dic,default_flow_style=False,explicit_start=False,explicit_end=True,width=100)
