@@ -19,7 +19,7 @@ def make_num(s):
         
 
 
-class Content:
+class MetaDataExtractor:
 
         def __init__(self,filename):
                 '''Initialize the object with List of files'''                
@@ -203,8 +203,25 @@ class Content:
                                                         continue
                 return cont_list
 
+
+class ContentGenerator:
+        ''' Takes list of ComponentData objects(python dicts as of now !). 
+        And writes them into YAML format'''
+
+        def __init__(self,comp_list):
+                self._list = comp_list
+
+        def write_in_yaml(self):
+                ofile = open("com.yml","w")
+                for dic in self._list:
+                        metadata = yaml.dump(dic,default_flow_style=False,explicit_start=False,explicit_end=True,width=100)
+                        ofile.write(metadata)
+                ofile.close()
+
+'''
 if __name__ == "__main__":
         obj = Content('apper_0.8.2-2_alpha.deb')
         li_to_wr = obj.read_metadata()
         for dic in li_to_wr:
                 yaml.dump(dic,default_flow_style=False,explicit_start=False,explicit_end=True,width=100)
+'''
