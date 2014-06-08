@@ -17,7 +17,18 @@ def make_num(s):
         except ValueError:
                 return s
         
+class ComponentData:
+        ''' Takes a dict containing the metadata. Sets a unique name for the object 
+        which is same as the ID of the data. '''
 
+        def __init__(self,dic):
+                ''' Initialize the object with dict '''
+                self._data = dic
+                self._ID = ''
+
+        def set_id(self,ID):
+                ''' Sets ID for the ComponentData. '''
+                self._ID = ID
 
 class MetaDataExtractor:
 
@@ -39,6 +50,15 @@ class MetaDataExtractor:
                                 return line
                 else:
                         return None
+
+        def find_id(self,dfile=None):
+                ''' Takes an absolute path as a string and 
+                returns the filename from the absolute path'''
+
+                li = dfile.split('/')
+                return li.pop()
+
+                
 
         def read_desktop(self,dcontent=None):
                 '''Convert a .desktop file into a dict'''
@@ -172,7 +192,7 @@ class MetaDataExtractor:
                 
         def read_metadata(self):
                 '''Reads the metadata from the xml file and the desktop files.
-                And returns a list of dict with the component data.'''
+                And returns a list of ComponentData objects.'''
 
                 cont_list = []
                 for meta_file in self._lof:
@@ -191,13 +211,18 @@ class MetaDataExtractor:
                                                                 #overwriting the Type field of .desktop by xml
                                                                 contents['Type'] = dic['Type']
                                                                 dic.update(contents)
-                                                        cont_list.append(dic)
+                                                        cd = ComponentData(dic)
+                                                        cd.set_id(dic['ID'])
+                                                        cont_list.append(cd)
 
                                                 elif '.desktop' in dfile :
                                                         dcontent = self._deb.data_content(dfile)
                                                         contents  = self.read_desktop(dcontent)
                                                         if contents:
-                                                                cont_list.append(contents)
+                                                                ID = self.find_id(dfile)
+                                                                cd = ComponentData(contents)
+                                                                cd.set_id(ID)
+                                                                cont_list.append(cd)
                                                 else:
                                                         #if dfile is not a desktop file
                                                         continue
@@ -213,15 +238,14 @@ class ContentGenerator:
 
         def write_in_yaml(self):
                 ofile = open("com.yml","w")
-                for dic in self._list:
-                        metadata = yaml.dump(dic,default_flow_style=False,explicit_start=False,explicit_end=True,width=100)
+                for data in self._list:
+                        metadata = yaml.dump(data._data,default_flow_style=False,explicit_start=False,explicit_end=True,width=100)
                         ofile.write(metadata)
                 ofile.close()
 
-'''
+
 if __name__ == "__main__":
-        obj = Content('apper_0.8.2-2_alpha.deb')
-        li_to_wr = obj.read_metadata()
-        for dic in li_to_wr:
-                yaml.dump(dic,default_flow_style=False,explicit_start=False,explicit_end=True,width=100)
-'''
+        mde = MetaDataExtractor('apper_0.8.2-2_alpha.deb')
+        cd_list = mde.read_metadata()
+        cg = ContentGenerator(cd_list)
+        cg.write_in_yaml()
