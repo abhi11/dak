@@ -7,6 +7,12 @@
 from apt import debfile 
 import lxml.etree as et
 import yaml
+import sys
+import urllib
+from check_appdata import appdata
+
+def usage():
+            print """ Usage: dak generate_metadata suitename """
 
 def make_num(s):
         '''Returns integer if the str is a digit
@@ -155,10 +161,14 @@ class MetaDataExtractor:
 
                         #does the screenshots well
                         if subs.tag == "screenshots":
-                                dic['Screenshots'] = {}
+                                dic['Screenshots'] = []
                                 for shots in subs:
                                         attr_dic = shots.attrib
-                                        dic['Screenshots'].update({attr_dic['type']:[{'width': make_num(attr_dic['width'])},
+                                        if attr_dic['type']:
+                                                dic['Screenshots'].append({attr_dic['type']:[{'width': make_num(attr_dic['width'])},
+                                                                                             {'height': make_num(attr_dic['height'])},{'url':shots.text}]})
+                                        else:
+                                                dic['Screenshots'].append({'notype':[{'width': make_num(attr_dic['width'])},
                                                                                              {'height': make_num(attr_dic['height'])},{'url':shots.text}]})
 
                         #needs changes provide's a bit tricky !!
@@ -236,16 +246,43 @@ class ContentGenerator:
         def __init__(self,comp_list):
                 self._list = comp_list
 
-        def write_in_yaml(self):
+        def save_meta(self):
+                ''' Saves Appstream metadata in yaml format and also invokes the fetch_store function'''
                 ofile = open("com.yml","w")
                 for data in self._list:
                         metadata = yaml.dump(data._data,default_flow_style=False,explicit_start=False,explicit_end=True,width=100)
                         ofile.write(metadata)
-                ofile.close()
+                        
+        def fetch_store(self,data):
+                ''' Fetches screenshots from the given url and stores it in png format.'''
+                #    tar = tarfile.open('/srv/dak/export/suite.tar.gz','w:gz')
+                if data._data['Screenshots']:
+                        cnt = 1
+                        for shot in data._data['Screenshots']:
+                                urllib.urlretrieve(shot[url],'/srv/dak/export/'+name+str(cnt)+'.png')
+                                cnt = cnt + 1
 
+def main():
+        if len(sys.argv) < 2 :
+                usage()
+                return
 
-if __name__ == "__main__":
+        suitename = sys.argv[1]
+        datalist = appdata('postgresql+psycopg2://postgres:postgres@localhost/projectc')
+        datalist.find_desktop(suitename=suitename)
+        datalist.find_xml(suitename=suitename)
+        icon_dic = datalist._deskdic
+        all_dic = datalist._commdic
+        for k,v in icon_dic.iteritems():
+                print k + ':' , v
+        '''
+        #loop over all_dic to find metadata of all the debian packages
         mde = MetaDataExtractor('apper_0.8.2-2_alpha.deb')
         cd_list = mde.read_metadata()
         cg = ContentGenerator(cd_list)
-        cg.write_in_yaml()
+        cg.save_meta()
+        #if debfile also in icon_dic then also fetch the icon'''
+
+
+if __name__ == "__main__":
+        main()
