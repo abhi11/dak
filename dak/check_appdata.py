@@ -23,6 +23,9 @@ class appdata:
         self._xmldic = {}
         self._commdic = {}
         
+    def make_name(self,package,version,arch):
+        '''returns a complete deb package'''
+        return package + '_' + version + '_' + arch + '.deb'
 
     def create_session(self,connstr):
         ''' Establishes a session if it is not initialized during __init__. '''
@@ -34,44 +37,60 @@ class appdata:
             print "Connection string invalid!"
             return None
             
-    def find_desktop(self,session = None):
+    def find_desktop(self,session = None,suitename=None):
         ''' Find binaries with a .desktop file. '''
         if session:
             self._session = session
         #SQL logic:
         #select all the binaries that have a .desktop file
-
-        sql = '''SELECT bc.file ,b.package from binaries b, bin_contents bc 
-        where bc.file like 'usr/share/applications/%.desktop' and b.id = bc.binary_id'''
+        if suitename:
+            sql = '''SELECT bc.file ,b.package, b.version, a.arch_string from binaries b, bin_contents bc , 
+            bin_associations ba, suite s, architecture a
+            where b.type = 'deb' and bc.file like 'usr/share/applications/%.desktop' and b.id = bc.binary_id and
+            b.architecture = a.id and b.id = ba.bin and ba.suite = s.id and s.suite_name = ''' "'"+ suitename + "'"
+        else:
+            sql = '''SELECT bc.file ,b.package, b.version, a.arch_string from binaries b, bin_contents bc , 
+            bin_associations ba, suite s, architecture a
+            where b.type = 'deb' and bc.file like 'usr/share/applications/%.desktop' and b.id = bc.binary_id 
+            and b.architecture = a.id'''
 
         result = self._session.execute(sql)
         rows = result.fetchall()
-        #create a dict with package:[.desktop files]
+        #create a dict with packagename:[.desktop files]
         for r in rows:
+            key = self.make_name(str(r[1]),str(r[2]),str(r[3]))
             try:
-                self._deskdic[str(r[1])].append(str(r[0]))
+                self._deskdic[key].append(str(r[0]))
             except KeyError:
-                self._deskdic[str(r[1])] = [str(r[0])]
+                self._deskdic[key] = [str(r[0])]
 
-    def find_xml(self,session = None):
+    def find_xml(self,session = None,suitename = None):
         ''' Find binaries with a .xml file. '''
 
         if session:
             self._session = session
         #SQL logic:
         #select all the binaries that have a .xml file
-
-        sql = '''SELECT bc.file ,b.package from binaries b, bin_contents bc 
-        where bc.file like 'usr/share/appdata/%.xml' and b.id = bc.binary_id'''
+        if suitename:
+            sql = '''SELECT bc.file ,b.package, b.version, a.arch_string from binaries b, bin_contents bc , 
+            bin_associations ba, suite s, architecture a
+            where b.type = 'deb' and bc.file like 'usr/share/appdata/%.xml' and b.id = bc.binary_id and 
+            b.architecture = a.id and b.id = ba.bin and ba.suite = s.id and s.suite_name = ''' + "'" + suitename + "'"
+        else:
+            sql = '''SELECT bc.file ,b.package, b.version, a.arch_string from binaries b, bin_contents bc , 
+            bin_associations ba, suite s, architecture a
+            where b.type = 'deb' and bc.file like 'usr/share/appdata/%.xml' and b.id = bc.binary_id
+            and b.architecture = a.id'''
 
         result = self._session.execute(sql)
         rows = result.fetchall()
         #create a dict with package:[.xml files]
         for r in rows:
+            key = self.make_name(str(r[1]),str(r[2]),str(r[3]))
             try:
-                self._xmldic[str(r[1])].append(str(r[0]))
+                self._xmldic[key].append(str(r[0]))
             except KeyError:
-                self._xmldic[str(r[1])] = [str(r[0])]
+                self._xmldic[key] = [str(r[0])]
 
     def comb_appdata(self):
         ''' Combines both dictionaries and creates a new list with all the metdata
