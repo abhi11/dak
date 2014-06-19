@@ -1,7 +1,9 @@
 #!/usr/bin/env python
 
 '''Takes a .deb file as an argument and reads the metadata from diffrent sources
-   such as the xml files in usr/share/appdata and .desktop files in usr/share/
+   such as the xml files in usr/share/appdata and .desktop files in usr/share/application.
+   Also created a screenshot cache and tarball of all the icons of packages beloging to a
+   given suite.
 '''
 
 from apt import debfile 
@@ -38,10 +40,12 @@ class ComponentData:
 
 class MetaDataExtractor:
 
-        def __init__(self,filename):
-                '''Initialize the object with List of files'''                
+        def __init__(self,filename,xml_list = None,desk_list = None):
+                '''Initialize the object with List of files''' 
+                self._filename = filename
                 self._deb = debfile.DebPackage(filename)
-                self._lof = self._deb.filelist
+                self._loxml = xml_list
+                self._lodesk = desk_list
 
         def notcomment(self,line=None):
                 '''checks whether a line is a comment on .desktop file'''
@@ -201,42 +205,45 @@ class MetaDataExtractor:
 
                 
         def read_metadata(self):
-                '''Reads the metadata from the xml file and the desktop files.
-                And returns a list of ComponentData objects.'''
+            '''Reads the metadata from the xml file and the desktop files.
+            And returns a list of ComponentData objects.'''
 
-                cont_list = []
-                for meta_file in self._lof:
-                        #change to regex
-                        if 'xml' in meta_file:
-                                xml_content = str(self._deb.data_content(meta_file))
-                                dic = self.read_xml(xml_content)
-                                #Reads the desktop files associated with the xml file
-                                if( '.desktop' in dic["ID"]):
-                                        for dfile in self._lof:
-                                                #for desktop file matching the ID
-                                                if dic['ID'] in dfile :
-                                                        dcontent = self._deb.data_content(dfile)
-                                                        contents  = self.read_desktop(dcontent)
-                                                        if contents :
-                                                                #overwriting the Type field of .desktop by xml
-                                                                contents['Type'] = dic['Type']
-                                                                dic.update(contents)
-                                                        cd = ComponentData(dic)
-                                                        cd.set_id(dic['ID'])
-                                                        cont_list.append(cd)
+            cont_list = []
+            try:
+                        for meta_file in self._loxml:
+                                    #change to regex
+                                    xml_content = str(self._deb.data_content(meta_file))
+                                    dic = self.read_xml(xml_content)
+                                    #Reads the desktop files associated with the xml file
+                                    if( '.desktop' in dic["ID"]):
+                                                for dfile in self._lodesk:
+                                                            #for desktop file matching the ID
+                                                            if dic['ID'] in dfile :
+                                                                        dcontent = self._deb.data_content(dfile)
+                                                                        contents  = self.read_desktop(dcontent)
+                                                                        #overwriting the Type field of .desktop by xml
+                                                                        contents['Type'] = dic['Type']
+                                                                        dic.update(contents)
+                                                                        cd = ComponentData(dic)
+                                                                        cd.set_id(dic['ID'])
+                                                                        cont_list.append(cd)
+                                                                        self._lodesk.remove(dfile)
+            except TypeError:
+                        print 'xml list is empty for the deb '+ self._filename
 
-                                                elif '.desktop' in dfile :
-                                                        dcontent = self._deb.data_content(dfile)
-                                                        contents  = self.read_desktop(dcontent)
-                                                        if contents:
-                                                                ID = self.find_id(dfile)
-                                                                cd = ComponentData(contents)
-                                                                cd.set_id(ID)
-                                                                cont_list.append(cd)
-                                                else:
-                                                        #if dfile is not a desktop file
-                                                        continue
-                return cont_list
+            #Reading the desktop files other than the file which matches the id in the xml file
+            try:
+                        for dfile in self._lodesk:
+                                    dcontent = self._deb.data_content(dfile)
+                                    contents  = self.read_desktop(dcontent)
+                                    ID = self.find_id(dfile)
+                                    cd = ComponentData(contents)
+                                    cd.set_id(ID)
+                                    cont_list.append(cd)
+            except TypeError:
+                        print 'desktop list is empty for the deb '+ self._filename
+                        
+            return cont_list
 
 
 class ContentGenerator:
@@ -246,21 +253,24 @@ class ContentGenerator:
         def __init__(self,comp_list):
                 self._list = comp_list
 
-        def save_meta(self):
+        def save_meta(self,ofile):
                 ''' Saves Appstream metadata in yaml format and also invokes the fetch_store function'''
-                ofile = open("com.yml","w")
                 for data in self._list:
                         metadata = yaml.dump(data._data,default_flow_style=False,explicit_start=False,explicit_end=True,width=100)
                         ofile.write(metadata)
+                        self.fetch_store(data)
                         
         def fetch_store(self,data):
                 ''' Fetches screenshots from the given url and stores it in png format.'''
                 #    tar = tarfile.open('/srv/dak/export/suite.tar.gz','w:gz')
-                if data._data['Screenshots']:
-                        cnt = 1
-                        for shot in data._data['Screenshots']:
-                                urllib.urlretrieve(shot[url],'/srv/dak/export/'+name+str(cnt)+'.png')
-                                cnt = cnt + 1
+                try:
+                            if data._data['Screenshots']:
+                                        cnt = 1
+                                        for shot in data._data['Screenshots']:
+                                                    urllib.urlretrieve(shot[url],'/srv/dak/export/'+name+str(cnt)+'.png')
+                                                    cnt = cnt + 1
+                except KeyError:
+                            pass
 
 def main():
         if len(sys.argv) < 2 :
@@ -268,21 +278,35 @@ def main():
                 return
 
         suitename = sys.argv[1]
-        datalist = appdata('postgresql+psycopg2://postgres:postgres@localhost/projectc')
+        path = '/home/abhishek/tanglu/pool/'
+        datalist = appdata('postgresql+psycopg2://postgres:postgres@localhost/projectd')
         datalist.find_desktop(suitename=suitename)
         datalist.find_xml(suitename=suitename)
-        icon_dic = datalist._deskdic
-        all_dic = datalist._commdic
-        for k,v in icon_dic.iteritems():
-                print k + ':' , v
-        '''
-        #loop over all_dic to find metadata of all the debian packages
-        mde = MetaDataExtractor('apper_0.8.2-2_alpha.deb')
-        cd_list = mde.read_metadata()
-        cg = ContentGenerator(cd_list)
-        cg.save_meta()
-        #if debfile also in icon_dic then also fetch the icon'''
+        desk_dic = datalist._deskdic
+        xml_dic = datalist._xmldic
+        ofile = open("com.yml","w")
+        for key in datalist._keylist:
+            print 'Processing deb: ' + key
+            try:
+                 xmlfiles = xml_dic[key]
+            except KeyError:
+                 xmlfiles = None
+                 
+            try:
+                 deskfiles = desk_dic[key]
+            except KeyError:
+                 deskfiles = None
 
+            #loop over all_dic to find metadata of all the debian packages
+            try:
+                        mde = MetaDataExtractor(path+key,xmlfiles,deskfiles)
+                        cd_list = mde.read_metadata()
+                        cg = ContentGenerator(cd_list)
+                        cg.save_meta(ofile)
+            except SystemError:
+                        print 'Not found !'
+        #if debfile also in icon_dic then also fetch the icon
+        ofile.close()
 
 if __name__ == "__main__":
         main()

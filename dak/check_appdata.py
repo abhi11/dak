@@ -22,6 +22,7 @@ class appdata:
         self._deskdic = {}
         self._xmldic = {}
         self._commdic = {}
+        self._keylist = []
         
     def make_name(self,package,version,arch):
         '''returns a complete deb package'''
@@ -44,23 +45,27 @@ class appdata:
         #SQL logic:
         #select all the binaries that have a .desktop file
         if suitename:
-            sql = '''SELECT bc.file ,b.package, b.version, a.arch_string from binaries b, bin_contents bc , 
-            bin_associations ba, suite s, architecture a
+            sql = '''SELECT bc.file, f.filename, c.name from binaries b, bin_contents bc , 
+            bin_associations ba, suite s, files f, override o, component c
             where b.type = 'deb' and bc.file like 'usr/share/applications/%.desktop' and b.id = bc.binary_id and
-            b.architecture = a.id and b.id = ba.bin and ba.suite = s.id and s.suite_name = ''' "'"+ suitename + "'"
+            b.file = f.id and o.package = b.package and c.id = o.component and 
+            b.id = ba.bin and ba.suite = s.id and s.suite_name = ''' "'"+ suitename + "'"
         else:
-            sql = '''SELECT bc.file ,b.package, b.version, a.arch_string from binaries b, bin_contents bc , 
-            bin_associations ba, suite s, architecture a
+            sql = '''SELECT bc.file, f.filename, c.name from binaries b, bin_contents bc, 
+            bin_associations ba, suite s, files f
             where b.type = 'deb' and bc.file like 'usr/share/applications/%.desktop' and b.id = bc.binary_id 
-            and b.architecture = a.id'''
+            and b.file = f.id and o.package = b.package and c.id = o.component'''
 
         result = self._session.execute(sql)
         rows = result.fetchall()
         #create a dict with packagename:[.desktop files]
         for r in rows:
-            key = self.make_name(str(r[1]),str(r[2]),str(r[3]))
+            key = str(r[2])+'/'+str(r[1])
+            if key not in self._keylist:
+                self._keylist.append(key)
             try:
-                self._deskdic[key].append(str(r[0]))
+                if str(r[0]) not in self._deskdic[key]:
+                    self._deskdic[key].append(str(r[0]))
             except KeyError:
                 self._deskdic[key] = [str(r[0])]
 
@@ -72,23 +77,27 @@ class appdata:
         #SQL logic:
         #select all the binaries that have a .xml file
         if suitename:
-            sql = '''SELECT bc.file ,b.package, b.version, a.arch_string from binaries b, bin_contents bc , 
-            bin_associations ba, suite s, architecture a
+            sql = '''SELECT bc.file, f.filename, c.name from binaries b, bin_contents bc , 
+            bin_associations ba, suite s, files f,override o, component c
             where b.type = 'deb' and bc.file like 'usr/share/appdata/%.xml' and b.id = bc.binary_id and 
-            b.architecture = a.id and b.id = ba.bin and ba.suite = s.id and s.suite_name = ''' + "'" + suitename + "'"
+            b.file = f.id and o.package = b.package and o.component = c.id and b.id = ba.bin and 
+            ba.suite = s.id and s.suite_name = ''' + "'" + suitename + "'"
         else:
-            sql = '''SELECT bc.file ,b.package, b.version, a.arch_string from binaries b, bin_contents bc , 
-            bin_associations ba, suite s, architecture a
+            sql = '''SELECT bc.file, f.filename, c.name  from binaries b, bin_contents bc , 
+            bin_associations ba, suite s, architecture a, override o, component c
             where b.type = 'deb' and bc.file like 'usr/share/appdata/%.xml' and b.id = bc.binary_id
-            and b.architecture = a.id'''
+            and b.file = f.id and o.package = b.package and o.component = c.id'''
 
         result = self._session.execute(sql)
         rows = result.fetchall()
         #create a dict with package:[.xml files]
         for r in rows:
-            key = self.make_name(str(r[1]),str(r[2]),str(r[3]))
+            key = str(r[2])+'/'+str(r[1])
+            if key not in self._keylist:
+                self._keylist.append(key)
             try:
-                self._xmldic[key].append(str(r[0]))
+                if str(r[0]) not in self._xmldic[key]:
+                    self._xmldic[key].append(str(r[0]))
             except KeyError:
                 self._xmldic[key] = [str(r[0])]
 
