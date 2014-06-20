@@ -12,6 +12,7 @@ import yaml
 import sys
 import urllib
 from check_appdata import appdata
+from subprocess import call
 
 def usage():
             print """ Usage: dak generate_metadata suitename """
@@ -250,27 +251,49 @@ class ContentGenerator:
         ''' Takes list of ComponentData objects(python dicts as of now !). 
         And writes them into YAML format'''
 
-        def __init__(self,comp_list):
-                self._list = comp_list
+        def __init__(self,comp_list,filename):
+            self._list = comp_list
+            self._file = filename
 
         def save_meta(self,ofile):
-                ''' Saves Appstream metadata in yaml format and also invokes the fetch_store function'''
-                for data in self._list:
+            ''' Saves Appstream metadata in yaml format and also invokes the fetch_store function'''
+            for data in self._list:
                         metadata = yaml.dump(data._data,default_flow_style=False,explicit_start=False,explicit_end=True,width=100)
                         ofile.write(metadata)
-                        self.fetch_store(data)
+                        self.fetch_screenshots(data)
+                        self.fetch_icon(data)
                         
-        def fetch_store(self,data):
-                ''' Fetches screenshots from the given url and stores it in png format.'''
-                #    tar = tarfile.open('/srv/dak/export/suite.tar.gz','w:gz')
-                try:
-                            if data._data['Screenshots']:
-                                        cnt = 1
-                                        for shot in data._data['Screenshots']:
-                                                    urllib.urlretrieve(shot[url],'/srv/dak/export/'+name+str(cnt)+'.png')
-                                                    cnt = cnt + 1
-                except KeyError:
-                            pass
+        def fetch_screenshots(self,data):
+            ''' Fetches screenshots from the given url and stores it in png format.'''
+            #    tar = tarfile.open('/srv/dak/export/suite.tar.gz','w:gz')
+            try:
+                        if data._data['Screenshots']:
+                                    cnt = 1
+                                    for shot in data._data['Screenshots']:
+                                                urllib.urlretrieve(shot[url],'/srv/dak/export/'+name+str(cnt)+'.png')
+                                                cnt = cnt + 1
+            except KeyError:
+                        pass
+
+        def fetch_icon(self,data):
+            try:
+                        print "inside fetch icon"
+                        icon = data._data['Icon']
+                        print icon
+                        l = self._file.split('/')
+                        print l
+                        deb = l.pop()
+                        ex_loc = "/".join(l)
+                        print ex_loc,self._file
+                        call(["dpkg","-x",self._file,ex_loc])
+                        icon_path = ex_loc+icon
+                        print icon_path
+                        #using a temp dir
+                        call(["cp",icon_path,"/home/abhishek/output/"+data._ID+".png"])
+                        print "Saved icon...."
+                        call(["rm","-rf",ex_loc+"/usr"])
+            except:
+                        pass
 
 def main():
         if len(sys.argv) < 2 :
@@ -301,7 +324,7 @@ def main():
             try:
                         mde = MetaDataExtractor(path+key,xmlfiles,deskfiles)
                         cd_list = mde.read_metadata()
-                        cg = ContentGenerator(cd_list)
+                        cg = ContentGenerator(cd_list,path+key)
                         cg.save_meta(ofile)
             except SystemError:
                         print 'Not found !'
