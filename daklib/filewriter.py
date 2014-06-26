@@ -164,3 +164,15 @@ class TranslationFileWriter(BaseFileWriter):
         flags.update(keywords)
         template = "%(archive)s/dists/%(suite)s/%(component)s/i18n/Translation-%(language)s"
         super(TranslationFileWriter, self).__init__(template, **flags)
+class ComponentDataFileWriter(BaseFileWriter):
+    def __init__(self, **keywords):
+        '''
+        The value of the keywords suite and component are strings.
+        Output files are gzip compressed only.
+        '''
+        flags = {
+            'compression': ['gzip'],
+        }
+        flags.update(keywords)
+        template = "/srv/dak/ftp/dists/%(suite)s/%(component)s/Component.yml"
+        BaseFileWriter.__init__(self, template, **flags)
