@@ -4,6 +4,7 @@ Checks binaries with a .desktop file or an appdata-xml file.
 Generates a dict with package name and associated appdata in 
 a list as value.
 '''
+from daklib.dbconn import *
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
@@ -18,9 +19,10 @@ class appdata:
             Session = sessionmaker(bind=self._engine)
             self._session = Session()
         else:
+            #using Config
             self._constr = ''
             self._engine = None
-            self._session = None
+            self._session = DBConn().session()
         self._deskdic = {}
         self._xmldic = {}
         self._commdic = {}
@@ -127,9 +129,10 @@ class appdata:
         for k,l in self._commdic.iteritems():
             print k +': ',l
 
+#For testing
 if __name__ == "__main__":
-    ap = appdata('postgresql+psycopg2://postgres:postgres@localhost/projectc')
-    ap.find_desktop()
-    ap.find_xml()
+    ap = appdata()
+    ap.find_desktop(component = 'contrib',suitename='aequorea')
+    ap.find_xml(component = 'contrib',suitename='aequorea')
     ap.comb_appdata()
     ap.printfiles()

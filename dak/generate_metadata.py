@@ -16,6 +16,7 @@ import urllib
 from check_appdata import appdata
 from daklib.daksubprocess import call
 from daklib.filewriter import ComponentDataFileWriter
+from daklib.config import Config
 
 def usage():
     print """ Usage: dak generate_metadata suitename """
@@ -292,12 +293,12 @@ class ContentGenerator:
         '''
         Fetches screenshots from the given url and stores it in png format.
         '''
-        #tar = tarfile.open('/srv/dak/export/suite.tar.gz','w:gz')
+
         try:
             if data._data['Screenshots']:
                 cnt = 1
                 for shot in data._data['Screenshots']:
-                    urllib.urlretrieve(shot[url],'/srv/dak/export/'+name+str(cnt)+'.png')
+                    urllib.urlretrieve(shot[url],Config()["Dir::Export"]+name+str(cnt)+'.png')
                     cnt = cnt + 1
                     print "Screenshots saved"
         except KeyError:
@@ -305,7 +306,6 @@ class ContentGenerator:
 
     def fetch_icon(self,data):
         try:
-            print "inside fetch icon"
             icon = data._data['Icon']
             print icon
             l = self._file.split('/')
@@ -316,7 +316,7 @@ class ContentGenerator:
             call(["dpkg","-x",self._file,ex_loc])
             icon_path = ex_loc+icon
             print icon_path
-            #using a temp dir
+            #using a temp dir for now
             call(["cp",icon_path,"/home/abhishek/output/"+data._ID+".png"])
             print "Saved icon...."
             call(["rm","-rf",ex_loc+"/usr"])
@@ -325,7 +325,7 @@ class ContentGenerator:
 
 def percomponent(component,suitename=None):
     path = '/home/abhishek/tanglu/pool/'
-    datalist = appdata('postgresql+psycopg2://postgres:postgres@localhost/projectd')
+    datalist = appdata()
     values = {
         'suite': suitename,
         'component': component
@@ -366,7 +366,7 @@ def main():
 
     suitename = sys.argv[1]
     comp_list = ['contrib','main','non-free']
-    datalist = appdata('postgresql+psycopg2://postgres:postgres@localhost/projectd')
+    datalist = appdata()
     for component in comp_list:
         percomponent(component,suitename)
 
