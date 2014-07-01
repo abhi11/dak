@@ -17,6 +17,7 @@ from check_appdata import appdata
 from daklib.daksubprocess import call
 from daklib.filewriter import ComponentDataFileWriter
 from daklib.config import Config
+from insert_dep import depobject
 
 def usage():
     print """ Usage: dak generate_metadata suitename """
@@ -73,8 +74,7 @@ class MetaDataExtractor:
                 if "#" in line:
                     line = line[0:line.find("#")]
                     return line
-                else:
-                    return None
+        return line
 
     def find_id(self,dfile=None):
         '''
@@ -97,16 +97,22 @@ class MetaDataExtractor:
         for line in lines:
             #first check if line is a comment
             line = self.notcomment(line)
+            print line
             if line:
                 #spliting into key-value pairs
                 tray = line.split("=",1)
-                
+                print tray
                 try:
                     key = str(tray[0].strip())
                     value = str(tray[1].strip())
                     #Ignore the file if NoDisplay is true
                     if key == 'NoDisplay' and value == 'True':
                         return None
+
+                    if key == 'Type' and value != 'Application':
+                        return None
+                    else:
+                        contents['Type'] = 'Application'
 
                     if key.startswith('Name') :
                         if key[4:] == '':
@@ -161,6 +167,7 @@ class MetaDataExtractor:
                         
                 except:
                     pass
+
         return contents
         
     def read_xml(self,xml_content=None):
@@ -259,6 +266,7 @@ class MetaDataExtractor:
             for dfile in self._lodesk:
                 dcontent = self._deb.data_content(dfile)
                 contents  = self.read_desktop(dcontent)
+                print contents
                 ID = self.find_id(dfile)
                 cd = ComponentData(contents)
                 cd.set_id(ID)
@@ -278,17 +286,19 @@ class ContentGenerator:
 
         self._list = comp_list
         self._file = filename
-
-    def save_meta(self,ofile):
+        
+    def save_meta(self,ofile,binid,depobj):
         '''
         Saves Appstream metadata in yaml format and also invokes the fetch_store function.
         '''
         for data in self._list:
             metadata = yaml.dump(data._data,default_flow_style=False,explicit_start=False,explicit_end=True,width=100)
             ofile.write(metadata)
+            print "printing metadata",data._data
             self.fetch_screenshots(data)
             self.fetch_icon(data)
-            
+            depobj.insertdata(binid,metadata)
+
     def fetch_screenshots(self,data):
         '''
         Fetches screenshots from the given url and stores it in png format.
@@ -298,7 +308,7 @@ class ContentGenerator:
             if data._data['Screenshots']:
                 cnt = 1
                 for shot in data._data['Screenshots']:
-                    urllib.urlretrieve(shot[url],Config()["Dir::Export"]+name+str(cnt)+'.png')
+                    urllib.urlretrieve(shot[url],Config()["Dir::Export"]+data._ID+str(cnt)+'.png')
                     cnt = cnt + 1
                     print "Screenshots saved"
         except KeyError:
@@ -333,10 +343,13 @@ def percomponent(component,suitename=None):
 
     datalist.find_desktop(component=component,suitename=suitename)
     datalist.find_xml(component=component,suitename=suitename)
+    info_dic = datalist._infodic
     desk_dic = datalist._deskdic
     xml_dic = datalist._xmldic
     writer = ComponentDataFileWriter(**values)
     ofile = writer.open()
+    depobj = depobject()
+
     for key in datalist._keylist:
         print 'Processing deb: ' + key
         try:
@@ -354,10 +367,12 @@ def percomponent(component,suitename=None):
             mde = MetaDataExtractor(path+key,xmlfiles,deskfiles)
             cd_list = mde.read_metadata()
             cg = ContentGenerator(cd_list,path+key)
-            cg.save_meta(ofile)
+            cg.save_meta(ofile,make_num(info_dic[key]),depobj)
+            depobj._session.commit()
         except SystemError:
             print 'Not found !'
-    ofile.close()     
+    ofile.close()
+    depobj.close()
             
 def main():
     if len(sys.argv) < 2 :
@@ -366,7 +381,6 @@ def main():
 
     suitename = sys.argv[1]
     comp_list = ['contrib','main','non-free']
-    datalist = appdata()
     for component in comp_list:
         percomponent(component,suitename)
 

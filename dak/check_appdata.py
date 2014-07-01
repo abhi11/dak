@@ -23,6 +23,7 @@ class appdata:
             self._constr = ''
             self._engine = None
             self._session = DBConn().session()
+        self._infodic = {}
         self._deskdic = {}
         self._xmldic = {}
         self._commdic = {}
@@ -49,13 +50,13 @@ class appdata:
         #SQL logic:
         #select all the binaries that have a .desktop file
         if suitename:
-            sql = '''SELECT bc.file, f.filename, c.name from binaries b, bin_contents bc , 
+            sql = '''SELECT bc.file, f.filename, c.name, b.id from binaries b, bin_contents bc , 
             bin_associations ba, suite s, files f, override o, component c
             where b.type = 'deb' and bc.file like 'usr/share/applications/%.desktop' and b.id = bc.binary_id and
             b.file = f.id and o.package = b.package and c.id = o.component and c.name = '''+"'"+component+"'"+'''
             and b.id = ba.bin and ba.suite = s.id and s.suite_name = ''' + "'"+ suitename + "'"
         else:
-            sql = '''SELECT bc.file, f.filename, c.name from binaries b, bin_contents bc, 
+            sql = '''SELECT bc.file, f.filename, c.name, b.id from binaries b, bin_contents bc, 
             bin_associations ba, suite s, files f
             where b.type = 'deb' and bc.file like 'usr/share/applications/%.desktop' and b.id = bc.binary_id 
             and b.file = f.id and o.package = b.package and c.id = o.component'''
@@ -66,6 +67,7 @@ class appdata:
         for r in rows:
             key = str(r[2])+'/'+str(r[1])
             if key not in self._keylist:
+                self._infodic[key] = str(r[3])
                 self._keylist.append(key)
             try:
                 if str(r[0]) not in self._deskdic[key]:
@@ -82,13 +84,13 @@ class appdata:
         #SQL logic:
         #select all the binaries that have a .xml file
         if suitename:
-            sql = '''SELECT bc.file, f.filename, c.name from binaries b, bin_contents bc , 
+            sql = '''SELECT bc.file, f.filename, c.name, b.id from binaries b, bin_contents bc , 
             bin_associations ba, suite s, files f,override o, component c
             where b.type = 'deb' and bc.file like 'usr/share/appdata/%.xml' and b.id = bc.binary_id and 
             b.file = f.id and o.package = b.package and o.component = c.id and c.name ='''+"'"+component+"'"+'''
             and b.id = ba.bin and ba.suite = s.id and s.suite_name = ''' + "'" + suitename + "'"
         else:
-            sql = '''SELECT bc.file, f.filename, c.name  from binaries b, bin_contents bc , 
+            sql = '''SELECT bc.file, f.filename, c.name, b.id  from binaries b, bin_contents bc , 
             bin_associations ba, suite s, architecture a, override o, component c
             where b.type = 'deb' and bc.file like 'usr/share/appdata/%.xml' and b.id = bc.binary_id
             and b.file = f.id and o.package = b.package and o.component = c.id'''
@@ -99,6 +101,7 @@ class appdata:
         for r in rows:
             key = str(r[2])+'/'+str(r[1])
             if key not in self._keylist:
+                self._infodic[key] = str(r[3])
                 self._keylist.append(key)
             try:
                 if str(r[0]) not in self._xmldic[key]:
