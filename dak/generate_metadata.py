@@ -13,6 +13,7 @@ import lxml.etree as et
 import yaml
 import sys
 import urllib
+import glob
 from check_appdata import appdata
 from daklib.daksubprocess import call
 from daklib.filewriter import ComponentDataFileWriter
@@ -32,6 +33,21 @@ def make_num(s):
         return num
     except ValueError:
         return s
+
+def find_duplicate(li,val):
+    '''
+    take a list of dicts.Determines whether val is already 
+    present in one of the dicts. Every dict has only one key:val pair
+    '''
+    for dic in li:
+        if dic == {}:
+            return 0
+        tup = dic.popitem()
+        if val == tup[1]:
+            #'duplicate'
+            return 1
+    #'new to write'
+    return 0
         
 class ComponentData:
     '''
@@ -90,18 +106,14 @@ class MetaDataExtractor:
         '''
         Convert a .desktop file into a dict
         '''
-        #Handles MimeType Keywords Comment Name
         contents = {}
         lines = dcontent.splitlines()
                 
         for line in lines:
-            #first check if line is a comment
             line = self.notcomment(line)
-            print line
             if line:
                 #spliting into key-value pairs
                 tray = line.split("=",1)
-                print tray
                 try:
                     key = str(tray[0].strip())
                     value = str(tray[1].strip())
@@ -122,12 +134,13 @@ class MetaDataExtractor:
                                 contents['Name'] = [{'C':value}]
                         else:
                             try:
-                                contents['Name'].append({key[5:-1]:value})
+                                if find_duplicate(contents['Name'],value) == 0:
+                                    contents['Name'].append({key[5:-1]:value})
                             except KeyError:
                                 contents['Name'] = [{key[5:-1]:value}]
                                                     
                     if key == 'Categories':
-                        value = value.replace(';',',')
+                        value = value.split(';')
                         contents['Categories'] = value
 
                     if key.startswith('Comment'):
@@ -138,7 +151,8 @@ class MetaDataExtractor:
                                 contents['Summary'] = [{'C':value}]
                         else:
                             try:
-                                contents['Summary'].append({key[8:-1]:value})
+                                if find_duplicate(contents['Summary'],value) == 0:
+                                    contents['Summary'].append({key[8:-1]:value})
                             except KeyError:
                                 contents['Summary'] = [{key[8:-1]:value}]
 
@@ -150,7 +164,8 @@ class MetaDataExtractor:
                                 contents['Keywords'] = [{'C':value}]
                         else:
                             try:
-                                contents['Keywords'].append({key[9:-1]:value})
+                                if find_duplicate(contents['Keywords'],value) == 0:
+                                    contents['Keywords'].append({key[9:-1]:value})
                             except KeyError:
                                 contents['Keywords'] = [{key[9:-1]:value}]
                                                 
@@ -174,9 +189,12 @@ class MetaDataExtractor:
         '''
         Reads the appdata from the xml file in usr/share/appdata
         '''
-
         root = et.fromstring(xml_content)
-        dic = {'Type':root.attrib['type']}
+        dic = {}
+        #requires a fix here
+        for key,val in root.attrib.iteritems():
+            if key == 'type':
+                dic = {'Type':root.attrib['type']}
     
         for subs in root:
             if subs.tag == 'id':
@@ -236,12 +254,10 @@ class MetaDataExtractor:
         Reads the metadata from the xml file and the desktop files.
         And returns a list of ComponentData objects.
         '''
-
         cont_list = []
-        #Readinf xml files and associated .desktop
+        #Reading xml files and associated .desktop
         try:
             for meta_file in self._loxml:
-                #change to regex
                 xml_content = str(self._deb.data_content(meta_file))
                 dic = self.read_xml(xml_content)
                 #Reads the desktop files associated with the xml file
@@ -252,7 +268,11 @@ class MetaDataExtractor:
                             dcontent = self._deb.data_content(dfile)
                             contents  = self.read_desktop(dcontent)
                             #overwriting the Type field of .desktop by xml
-                            contents['Type'] = dic['Type']
+                            #Type attribute may not always be present
+                            try:
+                                contents['Type'] = dic['Type']
+                            except KeyError:
+                                pass
                             dic.update(contents)
                             cd = ComponentData(dic)
                             cd.set_id(dic['ID'])
@@ -266,7 +286,6 @@ class MetaDataExtractor:
             for dfile in self._lodesk:
                 dcontent = self._deb.data_content(dfile)
                 contents  = self.read_desktop(dcontent)
-                print contents
                 ID = self.find_id(dfile)
                 cd = ComponentData(contents)
                 cd.set_id(ID)
@@ -292,9 +311,8 @@ class ContentGenerator:
         Saves Appstream metadata in yaml format and also invokes the fetch_store function.
         '''
         for data in self._list:
-            metadata = yaml.dump(data._data,default_flow_style=False,explicit_start=False,explicit_end=True,width=100)
+            metadata = yaml.dump(data._data,default_flow_style=False,explicit_start=True,explicit_end=False,width=100)
             ofile.write(metadata)
-            print "printing metadata",data._data
             self.fetch_screenshots(data)
             self.fetch_icon(data)
             depobj.insertdata(binid,metadata)
@@ -303,38 +321,43 @@ class ContentGenerator:
         '''
         Fetches screenshots from the given url and stores it in png format.
         '''
-
         try:
             if data._data['Screenshots']:
                 cnt = 1
                 for shot in data._data['Screenshots']:
-                    urllib.urlretrieve(shot[url],Config()["Dir::Export"]+data._ID+str(cnt)+'.png')
+                    urllib.urlretrieve(shot['url'],Config()["Dir::Export"]+data._ID+str(cnt)+'.png')
                     cnt = cnt + 1
-                    print "Screenshots saved"
+                    print "Screenshots saved..."
         except KeyError:
             pass
 
     def fetch_icon(self,data):
         try:
             icon = data._data['Icon']
-            print icon
             l = self._file.split('/')
-            print l
             deb = l.pop()
             ex_loc = "/".join(l)
-            print ex_loc,self._file
             call(["dpkg","-x",self._file,ex_loc])
             icon_path = ex_loc+icon
-            print icon_path
-            #using a temp dir for now
-            call(["cp",icon_path,"/home/abhishek/output/"+data._ID+".png"])
+            call(["cp",icon_path,"/home/abhishek/icon/"+data._ID+".png"])
             print "Saved icon...."
             call(["rm","-rf",ex_loc+"/usr"])
         except KeyError:
             pass
 
+### Functions directly used by main
+
+def make_icon_tar(location,component):
+    '''
+    write the shit for packing thses png into a single tar named 'Icons-%(component).tar.xz'
+    '''
+    for filename in glob.glob(location+"*.png"):
+        call(["tar","-uvf","{0}Icons-{1}.tar".format(location,component),filename])
+        call(["rm","-rf",filename])
+    call(["gzip","{0}Icons-{1}.tar".format(location,component)])
+
 def percomponent(component,suitename=None):
-    path = '/home/abhishek/tanglu/pool/'
+    path = '/home/abhishek/pool/'
     datalist = appdata()
     values = {
         'suite': suitename,
@@ -349,7 +372,6 @@ def percomponent(component,suitename=None):
     writer = ComponentDataFileWriter(**values)
     ofile = writer.open()
     depobj = depobject()
-
     for key in datalist._keylist:
         print 'Processing deb: ' + key
         try:
@@ -371,8 +393,10 @@ def percomponent(component,suitename=None):
             depobj._session.commit()
         except SystemError:
             print 'Not found !'
-    ofile.close()
+    writer.close()
     depobj.close()
+    make_icon_tar("/home/abhishek/icon/",component)
+    print "Done with component ",component
             
 def main():
     if len(sys.argv) < 2 :

@@ -19,7 +19,9 @@ class depobject():
 
 #for testing
 if __name__ == "__main__":
-    dobj = DEPObject()
+    dobj = depobject()
     dobj.insertdata(555,"test data test data")
     dobj._session.commit()
     dobj.close()
+    #session = DBConn().session()
+    

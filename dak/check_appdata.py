@@ -134,8 +134,10 @@ class appdata:
 
 #For testing
 if __name__ == "__main__":
-    ap = appdata()
-    ap.find_desktop(component = 'contrib',suitename='aequorea')
-    ap.find_xml(component = 'contrib',suitename='aequorea')
-    ap.comb_appdata()
-    ap.printfiles()
+
+    for component in ['contrib','main','non-free']:
+        ap = appdata()
+        ap.find_desktop(component = component, suitename='aequorea')
+        ap.find_xml(component = component, suitename='aequorea')
+        ap.comb_appdata()
+        ap.printfiles()
