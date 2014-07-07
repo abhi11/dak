@@ -67,7 +67,6 @@ class BaseFileWriter(object):
         tempfilename = filename + '.new'
         os.chmod(tempfilename, 0o644)
         os.rename(tempfilename, filename)
-        print "renamed to",filename
 
     # internal helper function to compress output
     def compress(self, cmd, suffix, path):
@@ -176,5 +175,5 @@ class ComponentDataFileWriter(BaseFileWriter):
             'compression':['xz'],
         }
         flags.update(keywords)
-        template = "/srv/dak/ftp/dists/%(suite)s/%(component)s/Component.yml"
+        template = "/srv/dak/ftp/dists/%(suite)s/%(component)s/Component-%(architecture)s.yml"
         BaseFileWriter.__init__(self, template, **flags)

@@ -14,11 +14,12 @@ import yaml
 import sys
 import urllib
 import glob
+from subprocess import CalledProcessError
 from check_appdata import appdata
-from daklib.daksubprocess import call
+from daklib.daksubprocess import call,check_call
 from daklib.filewriter import ComponentDataFileWriter
 from daklib.config import Config
-from insert_dep import depobject
+from insert_dep import DEP11Metadata
 
 def usage():
     print """ Usage: dak generate_metadata suitename """
@@ -182,9 +183,12 @@ class MetaDataExtractor:
                         
                 except:
                     pass
+        try:
+            if(contents['Icon']):
+                return contents
+        except KeyError:
+            return None
 
-        return contents
-        
     def read_xml(self,xml_content=None):
         '''
         Reads the appdata from the xml file in usr/share/appdata
@@ -269,11 +273,13 @@ class MetaDataExtractor:
                             contents  = self.read_desktop(dcontent)
                             #overwriting the Type field of .desktop by xml
                             #Type attribute may not always be present
-                            try:
-                                contents['Type'] = dic['Type']
-                            except KeyError:
-                                pass
-                            dic.update(contents)
+                            if contents:
+                                try:
+                                    contents['Type'] = dic['Type']
+                                except KeyError:
+                                    pass
+                                dic.update(contents)
+
                             cd = ComponentData(dic)
                             cd.set_id(dic['ID'])
                             cont_list.append(cd)
@@ -286,10 +292,11 @@ class MetaDataExtractor:
             for dfile in self._lodesk:
                 dcontent = self._deb.data_content(dfile)
                 contents  = self.read_desktop(dcontent)
-                ID = self.find_id(dfile)
-                cd = ComponentData(contents)
-                cd.set_id(ID)
-                cont_list.append(cd)
+                if contents:
+                    ID = self.find_id(dfile)
+                    cd = ComponentData(contents)
+                    cd.set_id(ID)
+                    cont_list.append(cd)
         except TypeError:
             print 'desktop list is empty for the deb '+ self._filename
                         
@@ -301,21 +308,22 @@ class ContentGenerator:
     Takes list of ComponentData objects(python dicts as of now !). 
     And writes them into YAML format
     '''
-    def __init__(self,comp_list,filename):
+    def __init__(self,comp_list,filename,filelist):
 
         self._list = comp_list
         self._file = filename
+        self._filelist = filelist
         
     def save_meta(self,ofile,binid,depobj):
         '''
         Saves Appstream metadata in yaml format and also invokes the fetch_store function.
         '''
         for data in self._list:
-            metadata = yaml.dump(data._data,default_flow_style=False,explicit_start=True,explicit_end=False,width=100)
-            ofile.write(metadata)
+            metadata = yaml.dump(data._data,default_flow_style=False,explicit_start=True,explicit_end=False,width=100,indent=4)
             self.fetch_screenshots(data)
-            self.fetch_icon(data)
-            depobj.insertdata(binid,metadata)
+            if (self.fetch_icon(data)):
+                ofile.write(metadata)
+                depobj.insertdata(binid,metadata)
 
     def fetch_screenshots(self,data):
         '''
@@ -332,18 +340,50 @@ class ContentGenerator:
             pass
 
     def fetch_icon(self,data):
+        '''
+        Searches for icon if aboslute path to an icon
+        is not given. Component with invalid icons are ignored
+        '''
         try:
             icon = data._data['Icon']
-            l = self._file.split('/')
-            deb = l.pop()
-            ex_loc = "/".join(l)
-            call(["dpkg","-x",self._file,ex_loc])
-            icon_path = ex_loc+icon
-            call(["cp",icon_path,"/home/abhishek/icon/"+data._ID+".png"])
+            if icon.endswith('.xpm') or icon.endswith('.tiff'):
+                return False
+
+            if icon[1:] in self._filelist:
+                return self.save_icon(icon,data._ID)
+                 
+            else:
+                for path in self._filelist:
+                    if path.endswith(icon+'.png') or path.endswith(icon+'.svg') or path.endswith(icon+'.ico')\
+                       or path.endswith(icon+'.xcf') or path.endswith(icon+'.gif') or path.endswith(icon+'.svgz'):
+                        if 'pixmaps' in path or 'icons' in path:
+                            return self.save_icon('/'+path,data._ID)
+                   
+                return False
+                            
+        except KeyError:
+            return False
+
+    def save_icon(self,icon,ID):
+        '''
+        Extracts the icon from the deb package and stores it.
+        '''
+        l = self._file.split('/')
+        deb = l.pop()
+        ex_loc = "/".join(l)
+        call(["dpkg","-x",self._file,ex_loc])
+        icon_path = ex_loc+icon
+        try:
+            check_call(["cp",icon_path,"/home/abhishek/icon/"+ID+".png"])
             print "Saved icon...."
             call(["rm","-rf",ex_loc+"/usr"])
-        except KeyError:
-            pass
+            call(["rm","-rf",ex_loc+"/etc"])
+            return True
+        except CalledProcessError:
+            call(["rm","-rf",ex_loc+"/usr"])
+            call(["rm","-rf",ex_loc+"/etc"])
+            print 'icon corrupted not saving metadata'
+            return False
 
 ### Functions directly used by main
 
@@ -357,44 +397,53 @@ def make_icon_tar(location,component):
     call(["gzip","{0}Icons-{1}.tar".format(location,component)])
 
 def percomponent(component,suitename=None):
+    '''
+    Run by main to loop for different component and architecture.
+    '''
     path = '/home/abhishek/pool/'
     datalist = appdata()
-    values = {
-        'suite': suitename,
-        'component': component
-    }
 
     datalist.find_desktop(component=component,suitename=suitename)
     datalist.find_xml(component=component,suitename=suitename)
     info_dic = datalist._infodic
     desk_dic = datalist._deskdic
     xml_dic = datalist._xmldic
-    writer = ComponentDataFileWriter(**values)
-    ofile = writer.open()
-    depobj = depobject()
-    for key in datalist._keylist:
-        print 'Processing deb: ' + key
-        try:
-            xmlfiles = xml_dic[key]
-        except KeyError:
-            xmlfiles = None
-                 
-        try:
-            deskfiles = desk_dic[key]
-        except KeyError:
-            deskfiles = None
 
-        #loop over all_dic to find metadata of all the debian packages
-        try:
-            mde = MetaDataExtractor(path+key,xmlfiles,deskfiles)
-            cd_list = mde.read_metadata()
-            cg = ContentGenerator(cd_list,path+key)
-            cg.save_meta(ofile,make_num(info_dic[key]),depobj)
-            depobj._session.commit()
-        except SystemError:
-            print 'Not found !'
-    writer.close()
-    depobj.close()
+    for arch in datalist.arch_deblist.iterkeys():
+        values = {
+            'suite': suitename,
+            'component': component,
+            'architecture': arch
+        }
+
+        writer = ComponentDataFileWriter(**values)
+        ofile = writer.open()
+        dep11 = DEP11Metadata()
+        for key in datalist.arch_deblist[arch]:
+            print 'Processing deb: ' + key
+            try:
+                xmlfiles = xml_dic[key]
+            except KeyError:
+                xmlfiles = None
+                 
+            try:
+                deskfiles = desk_dic[key]
+            except KeyError:
+                deskfiles = None
+
+            #loop over all_dic to find metadata of all the debian packages
+            try:
+                mde = MetaDataExtractor(path+key,xmlfiles,deskfiles)
+                cd_list = mde.read_metadata()
+                filelist = mde._deb.filelist
+                cg = ContentGenerator(cd_list,path+key,filelist)
+                cg.save_meta(ofile,make_num(info_dic[key]),dep11)
+                dep11._session.commit()
+            except SystemError:
+                print 'Not found !'
+        writer.close()
+        dep11.close()
+
     make_icon_tar("/home/abhishek/icon/",component)
     print "Done with component ",component
             

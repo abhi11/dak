@@ -46,7 +46,7 @@ try:
     # python >= 2.6
     import json
 except:
-   # python <= 2.5
+    # python <= 2.5
     import simplejson as json
 
 from datetime import datetime, timedelta
