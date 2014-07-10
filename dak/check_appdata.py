@@ -47,15 +47,20 @@ class appdata:
 		'''
         if session:
             self._session = session
+
+        params = {
+            'component' : component,
+            'suitename' : suitename
+            }
         #SQL logic:
         #select all the binaries that have a .desktop file
-        sql = '''SELECT bc.file, f.filename, c.name, b.id, a.arch_string from binaries b, bin_contents bc , 
+        sql = """SELECT distinct on (b.package) bc.file, f.filename, c.name, b.id, a.arch_string from binaries b, bin_contents bc , 
             bin_associations ba, suite s, files f, override o, component c, architecture a
             where b.type = 'deb' and bc.file like 'usr/share/applications/%.desktop' and b.id = bc.binary_id and
-            b.file = f.id and o.package = b.package and c.id = o.component and c.name = '''+"'"+component+"'"+'''
-            and b.id = ba.bin and  b.architecture = a.id and ba.suite = s.id and s.suite_name = ''' + "'"+ suitename + "'"
+            b.file = f.id and o.package = b.package and c.id = o.component and c.name = :component
+            and b.id = ba.bin and  b.architecture = a.id and ba.suite = s.id and s.suite_name = :suitename"""
 
-        result = self._session.execute(sql)
+        result = self._session.execute(sql,params)
         rows = result.fetchall()
         #create a dict with packagename:[.desktop files]
         for r in rows:
@@ -79,16 +84,21 @@ class appdata:
 		'''
         if session:
             self._session = session
+        
+        params = {
+            'component' : component,
+            'suitename' : suitename
+            }
         #SQL logic:
         #select all the binaries that have a .xml file
         if suitename:
-            sql = '''SELECT bc.file, f.filename, c.name, b.id, a.arch_string from binaries b, bin_contents bc , 
+            sql = """SELECT distinct on (b.package) bc.file, f.filename, c.name, b.id, a.arch_string from binaries b, bin_contents bc , 
             bin_associations ba, suite s, files f,override o, component c, architecture a
             where b.type = 'deb' and bc.file like 'usr/share/appdata/%.xml' and b.id = bc.binary_id and 
-            b.file = f.id and o.package = b.package and o.component = c.id and c.name ='''+"'"+component+"'"+'''
-            and b.id = ba.bin and b.architecture = a.id and ba.suite = s.id and s.suite_name = ''' + "'" + suitename + "'"
+            b.file = f.id and o.package = b.package and o.component = c.id and c.name = :component
+            and b.id = ba.bin and b.architecture = a.id and ba.suite = s.id and s.suite_name = :suitename"""
 
-        result = self._session.execute(sql)
+        result = self._session.execute(sql,params)
         rows = result.fetchall()
         #create a dict with package:[.xml files]
         for r in rows:
