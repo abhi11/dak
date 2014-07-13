@@ -4,6 +4,7 @@ Checks binaries with a .desktop file or an appdata-xml file.
 Generates a dict with package name and associated appdata in 
 a list as value.
 '''
+
 from daklib.dbconn import *
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
@@ -23,11 +24,12 @@ class appdata:
             self._constr = ''
             self._engine = None
             self._session = DBConn().session()
-        self._infodic = {}
+        self._idlist = {}
         self._deskdic = {}
         self._xmldic = {}
         self._commdic = {}
         self.arch_deblist = {}
+        self._pkglist = {}
         
     def create_session(self,connstr):
         '''
@@ -54,11 +56,12 @@ class appdata:
             }
         #SQL logic:
         #select all the binaries that have a .desktop file
-        sql = """SELECT distinct on (b.package) bc.file, f.filename, c.name, b.id, a.arch_string from binaries b, bin_contents bc , 
-            bin_associations ba, suite s, files f, override o, component c, architecture a
-            where b.type = 'deb' and bc.file like 'usr/share/applications/%.desktop' and b.id = bc.binary_id and
-            b.file = f.id and o.package = b.package and c.id = o.component and c.name = :component
-            and b.id = ba.bin and  b.architecture = a.id and ba.suite = s.id and s.suite_name = :suitename"""
+        sql = """SELECT distinct on (b.package) bc.file, f.filename, c.name, b.id, a.arch_string, b.package 
+        from binaries b, bin_contents bc, bin_associations ba, suite s, files f, override o, component c, architecture a
+        where b.type = 'deb' and bc.file like 'usr/share/applications/%.desktop' and b.id = bc.binary_id and
+        b.file = f.id and o.package = b.package and c.id = o.component and c.name = :component
+        and b.id = ba.bin and  b.architecture = a.id and ba.suite = s.id and s.suite_name = :suitename
+        order by b.package, b.version desc"""
 
         result = self._session.execute(sql,params)
         rows = result.fetchall()
@@ -67,11 +70,13 @@ class appdata:
             key = str(r[2])+'/'+str(r[1])
             try:
                 if key not in self.arch_deblist[str(r[4])]:
-                    self._infodic[key] = str(r[3])
+                    self._idlist[key] = str(r[3])
+                    self._pkglist[key] = str(r[5])
                     self.arch_deblist[str(r[4])].append(key)
             except KeyError:
                 self.arch_deblist[str(r[4])] = [key]
-                self._infodic[key] = str(r[3])
+                self._idlist[key] = str(r[3])
+                self._pkglist[key] = str(r[5])
             try:
                 if str(r[0]) not in self._deskdic[key]:
                     self._deskdic[key].append(str(r[0]))
@@ -92,11 +97,12 @@ class appdata:
         #SQL logic:
         #select all the binaries that have a .xml file
         if suitename:
-            sql = """SELECT distinct on (b.package) bc.file, f.filename, c.name, b.id, a.arch_string from binaries b, bin_contents bc , 
-            bin_associations ba, suite s, files f,override o, component c, architecture a
+            sql = """SELECT distinct on (b.package) bc.file, f.filename, c.name, b.id, a.arch_string, b.package
+            from binaries b, bin_contents bc, bin_associations ba, suite s, files f,override o, component c, architecture a
             where b.type = 'deb' and bc.file like 'usr/share/appdata/%.xml' and b.id = bc.binary_id and 
             b.file = f.id and o.package = b.package and o.component = c.id and c.name = :component
-            and b.id = ba.bin and b.architecture = a.id and ba.suite = s.id and s.suite_name = :suitename"""
+            and b.id = ba.bin and b.architecture = a.id and ba.suite = s.id and s.suite_name = :suitename
+            order by b.package, b.version desc"""
 
         result = self._session.execute(sql,params)
         rows = result.fetchall()
@@ -105,11 +111,13 @@ class appdata:
             key = str(r[2])+'/'+str(r[1])
             try:
                 if key not in self.arch_deblist[str(r[4])]:
-                    self._infodic[key] = str(r[3])
+                    self._idlist[key] = str(r[3])
+                    self._pkglist[key] = str(r[5])
                     self.arch_deblist[str(r[4])].append(key)
             except KeyError:
                 self.arch_deblist[str(r[4])] = [key]
-                self._infodic[key] = str(r[3])
+                self._idlist[key] = str(r[3])
+                self._pkglist[key] = str(r[5])
             try:
                 if str(r[0]) not in self._xmldic[key]:
                     self._xmldic[key].append(str(r[0]))
@@ -139,12 +147,53 @@ class appdata:
         for k,l in self._commdic.iteritems():
             print k +': ',l
 
+class findicon():
+    '''
+    To be used when icon is not found through regular method.This class 
+    searches icons of similar packages. Ignores the package with binid.
+    '''
+    def __init__(self,package,icon,binid):
+        self._params = {
+            'package' : '%'+package+'%',
+            'icon1' : 'usr/share/icons/%'+icon+'%',
+            'icon2' : 'usr/share/pixmaps/%'+icon+'%',
+            'id' : binid
+        }
+        self._session = DBConn().session()
+        self._icon = icon
+
+    def queryicon(self):
+        '''
+        function to query icon files from similar packages. copies the icon too
+        '''
+        sql = """ select bc.file, f.filename from binaries b, bin_contents bc, files f where b.file = f.id 
+        and b.package like :package and (bc.file like :icon1 or bc.file like :icon2) and 
+        (bc.file not like '%.xpm' and bc.file not like '%.tiff') and b.id <> :id and b.id = bc.binary_id"""
+
+        result = self._session.execute(sql,self._params)
+        rows = result.fetchall()
+
+        for r in rows:
+            path = str(r[0])
+            filename = str(r[1])
+            if path.endswith(self._icon+'.png') or path.endswith(self._icon+'.svg') or path.endswith(self._icon+'.ico')\
+               or path.endswith(self._icon+'.xcf') or path.endswith(self._icon+'.gif') or path.endswith(self._icon+'.svgz'):
+                return [path,filename]
+        return False
+
+
 #For testing
 if __name__ == "__main__":
 
-    for component in ['contrib','main','non-free']:
-        ap = appdata()
-        ap.find_desktop(component = component, suitename='aequorea')
-        ap.find_xml(component = component, suitename='aequorea')
-        ap.comb_appdata()
-        ap.printfiles()
+
+#    for component in ['contrib','main','non-free']:
+ 
+    ap = appdata()
+    ap.find_desktop(component = 'main', suitename='aequorea')
+    ap.find_xml(component = 'main', suitename='aequorea')
+    ap.comb_appdata()
+    ap.printfiles()
+    '''
+    f = findicon("aqemu","aqemu",48)
+    f.queryicon()
+    '''

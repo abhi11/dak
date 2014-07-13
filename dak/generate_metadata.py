@@ -14,8 +14,10 @@ import yaml
 import sys
 import urllib
 import glob
+import sha
+import time
 from subprocess import CalledProcessError
-from check_appdata import appdata
+from check_appdata import appdata,findicon
 from daklib.daksubprocess import call,check_call
 from daklib.filewriter import ComponentDataFileWriter
 from daklib.config import Config
@@ -142,6 +144,7 @@ class MetaDataExtractor:
                                                     
                     if key == 'Categories':
                         value = value.split(';')
+                        value.pop()
                         contents['Categories'] = value
 
                     if key.startswith('Comment'):
@@ -216,12 +219,9 @@ class MetaDataExtractor:
                 dic['Screenshots'] = []
                 for shots in subs:
                     attr_dic = shots.attrib
-                    if attr_dic['type']:
-                        dic['Screenshots'].append({attr_dic['type']:[{'width': make_num(attr_dic['width'])},
-                                                                                             {'height': make_num(attr_dic['height'])},{'url':shots.text}]})
-                    else:
-                        dic['Screenshots'].append({'notype':[{'width': make_num(attr_dic['width'])},
-                                                                                             {'height': make_num(attr_dic['height'])},{'url':shots.text}]})
+                    for k in attr_dic.iterkeys():
+                        dic['Screenshots'].append({k:make_num(attr_dic[k])})
+                    dic['Screenshots'].append({'url':shots.text})
 
             #needs changes provide's a bit tricky !!
             if subs.tag == "provides":
@@ -305,16 +305,18 @@ class MetaDataExtractor:
 
 class ContentGenerator:
     '''
-    Takes list of ComponentData objects(python dicts as of now !). 
-    And writes them into YAML format
+    Takes list of ComponentData objects.And writes them into YAML format
     '''
-    def __init__(self,comp_list,filename,filelist):
+    def __init__(self,comp_list,filename,filelist,binid,component,pkg):
 
         self._list = comp_list
         self._file = filename
         self._filelist = filelist
+        self._binid = binid
+        self._component = component
+        self._pkg = pkg
         
-    def save_meta(self,ofile,binid,depobj):
+    def save_meta(self,ofile,depobj):
         '''
         Saves Appstream metadata in yaml format and also invokes the fetch_store function.
         '''
@@ -323,7 +325,7 @@ class ContentGenerator:
             self.fetch_screenshots(data)
             if (self.fetch_icon(data)):
                 ofile.write(metadata)
-                depobj.insertdata(binid,metadata)
+                depobj.insertdata(self._binid,metadata)
 
     def fetch_screenshots(self,data):
         '''
@@ -333,9 +335,17 @@ class ContentGenerator:
             if data._data['Screenshots']:
                 cnt = 1
                 for shot in data._data['Screenshots']:
-                    urllib.urlretrieve(shot['url'],Config()["Dir::Export"]+data._ID+str(cnt)+'.png')
-                    cnt = cnt + 1
-                    print "Screenshots saved..."
+                    '''
+                    use sha hashing to name the screenshots
+                    '''
+                    try:
+                        shothashed = sha.new(shot['url'].split('/').pop())
+                        shotname = shothashed.hexdigest()
+                        urllib.urlretrieve(shot['url'],Config()["Dir::Export"]+shotname+'.png')
+                        print "Screenshots saved..."
+                        time.sleep(5)
+                    except KeyError:
+                        pass
         except KeyError:
             pass
 
@@ -350,42 +360,45 @@ class ContentGenerator:
                 return False
 
             if icon[1:] in self._filelist:
-                return self.save_icon(icon,data._ID)
+                return save_icon(icon,data._ID,self._file)
                  
             else:
                 for path in self._filelist:
                     if path.endswith(icon+'.png') or path.endswith(icon+'.svg') or path.endswith(icon+'.ico')\
                        or path.endswith(icon+'.xcf') or path.endswith(icon+'.gif') or path.endswith(icon+'.svgz'):
                         if 'pixmaps' in path or 'icons' in path:
-                            return self.save_icon('/'+path,data._ID)
-                   
+                            return save_icon('/'+path,data._ID,self._file)
+                ficon = findicon(self._pkg,icon,self._binid)
+                flist = ficon.queryicon()
+                if flist:
+                    filepath = '/home/abhishek/pool/'+self._component+'/'+flist[1]
+                    return save_icon('/'+flist[0],data._ID,filepath)
                 return False
-                            
+
         except KeyError:
             return False
 
-    def save_icon(self,icon,ID):
-        '''
-        Extracts the icon from the deb package and stores it.
-        '''
-        l = self._file.split('/')
-        deb = l.pop()
-        ex_loc = "/".join(l)
-        call(["dpkg","-x",self._file,ex_loc])
-        icon_path = ex_loc+icon
-        try:
-            check_call(["cp",icon_path,"/home/abhishek/icon/"+ID+".png"])
-            print "Saved icon...."
-            call(["rm","-rf",ex_loc+"/usr"])
-            call(["rm","-rf",ex_loc+"/etc"])
-            return True
-        except CalledProcessError:
-            call(["rm","-rf",ex_loc+"/usr"])
-            call(["rm","-rf",ex_loc+"/etc"])
-            print 'icon corrupted not saving metadata'
-            return False
-
-### Functions directly used by main
+###Utility programs
+def save_icon(icon,ID,filepath):
+    '''
+    Extracts the icon from the deb package and stores it.
+    '''
+    l = filepath.split('/')
+    deb = l.pop()
+    ex_loc = "/".join(l)
+    call(["dpkg","-x",filepath,ex_loc])
+    icon_path = ex_loc+icon
+    try:
+        check_call(["cp",icon_path,"/home/abhishek/icon/"+ID+".png"])
+        print "Saved icon...."
+        call(["rm","-rf",ex_loc+"/usr"])
+        call(["rm","-rf",ex_loc+"/etc"])
+        return True
+    except CalledProcessError:
+        call(["rm","-rf",ex_loc+"/usr"])
+        call(["rm","-rf",ex_loc+"/etc"])
+        print 'icon corrupted not saving metadata'
+        return False
 
 def make_icon_tar(location,component):
     '''
@@ -405,9 +418,10 @@ def percomponent(component,suitename=None):
 
     datalist.find_desktop(component=component,suitename=suitename)
     datalist.find_xml(component=component,suitename=suitename)
-    info_dic = datalist._infodic
+    info_dic = datalist._idlist
     desk_dic = datalist._deskdic
     xml_dic = datalist._xmldic
+    pkg_list = datalist._pkglist
 
     for arch in datalist.arch_deblist.iterkeys():
         values = {
@@ -436,8 +450,8 @@ def percomponent(component,suitename=None):
                 mde = MetaDataExtractor(path+key,xmlfiles,deskfiles)
                 cd_list = mde.read_metadata()
                 filelist = mde._deb.filelist
-                cg = ContentGenerator(cd_list,path+key,filelist)
-                cg.save_meta(ofile,make_num(info_dic[key]),dep11)
+                cg = ContentGenerator(cd_list,path+key,filelist,make_num(info_dic[key]),component,pkg_list[key])
+                cg.save_meta(ofile,dep11)
                 dep11._session.commit()
             except SystemError:
                 print 'Not found !'
@@ -453,7 +467,7 @@ def main():
         return
 
     suitename = sys.argv[1]
-    comp_list = ['contrib','main','non-free']
+    comp_list = ['main']
     for component in comp_list:
         percomponent(component,suitename)
 
