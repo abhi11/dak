@@ -339,9 +339,12 @@ class ContentGenerator:
                     use sha hashing to name the screenshots
                     '''
                     try:
-                        shothashed = sha.new(shot['url'].split('/').pop())
-                        shotname = shothashed.hexdigest()
-                        urllib.urlretrieve(shot['url'],Config()["Dir::Export"]+shotname+'.png')
+                        image = urllib.urlopen(shot['url']).read()
+                        has = sha.new(image)
+                        hd = has.hexdigest()
+                        f = open(Config()["Dir::Export"]+self._pkg+'-'+hd+'.png','wb')
+                        f.write(image)
+                        f.close()
                         print "Screenshots saved..."
                         time.sleep(5)
                     except KeyError:
