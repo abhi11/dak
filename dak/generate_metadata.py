@@ -346,7 +346,6 @@ class ContentGenerator:
                         f.write(image)
                         f.close()
                         print "Screenshots saved..."
-                        time.sleep(5)
                     except KeyError:
                         pass
         except KeyError:
