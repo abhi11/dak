@@ -5,7 +5,6 @@ Takes a .deb file as an argument and reads the metadata from diffrent sources
 such as the xml files in usr/share/appdata and .desktop files in usr/share/application.
 Also created a screenshot cache and tarball of all the icons of packages beloging to a
 given suite.
-
 '''
 
 from apt import debfile 
@@ -15,13 +14,16 @@ import sys
 import urllib
 import glob
 import sha
-import time
+import datetime
 from subprocess import CalledProcessError
 from check_appdata import appdata,findicon
 from daklib.daksubprocess import call,check_call
 from daklib.filewriter import ComponentDataFileWriter
 from daklib.config import Config
 from insert_dep import DEP11Metadata
+
+time_str = str(datetime.date.today())
+logfile = open(Config()["Dir::log"]+"genmeta-{0}.txt".format(time_str),'w')
 
 def usage():
     print """ Usage: dak generate_metadata suitename """
@@ -45,10 +47,10 @@ def find_duplicate(li,val):
     for dic in li:
         if dic == {}:
             return 0
-        tup = dic.popitem()
-        if val == tup[1]:
-            #'duplicate'
-            return 1
+        for v in dic.itervalues():
+            if val == v:
+                #'duplicate'
+                return 1
     #'new to write'
     return 0
         
@@ -123,7 +125,7 @@ class MetaDataExtractor:
                     #Ignore the file if NoDisplay is true
                     if key == 'NoDisplay' and value == 'True':
                         return None
-
+                        
                     if key == 'Type' and value != 'Application':
                         return None
                     else:
@@ -373,14 +375,14 @@ class ContentGenerator:
                 ficon = findicon(self._pkg,icon,self._binid)
                 flist = ficon.queryicon()
                 if flist:
-                    filepath = '/home/abhishek/pool/'+self._component+'/'+flist[1]
+                    filepath = Config()["Dir::Pool"]+self._component+'/'+flist[1]
                     return save_icon('/'+flist[0],data._ID,filepath)
                 return False
 
         except KeyError:
             return False
 
-###Utility programs
+###Utility methods
 def save_icon(icon,ID,filepath):
     '''
     Extracts the icon from the deb package and stores it.
@@ -388,10 +390,10 @@ def save_icon(icon,ID,filepath):
     l = filepath.split('/')
     deb = l.pop()
     ex_loc = "/".join(l)
-    call(["dpkg","-x",filepath,ex_loc])
+    call(["dpkg","-x",filepath,ex_loc],stdout=logfile,stderr=logfile)
     icon_path = ex_loc+icon
     try:
-        check_call(["cp",icon_path,"/home/abhishek/icon/"+ID+".png"])
+        check_call(["cp",icon_path,Config()["Dir::Icon"]+ID+".png"],stdout=logfile,stderr=logfile)
         print "Saved icon...."
         call(["rm","-rf",ex_loc+"/usr"])
         call(["rm","-rf",ex_loc+"/etc"])
@@ -404,18 +406,18 @@ def save_icon(icon,ID,filepath):
 
 def make_icon_tar(location,component):
     '''
-    write the shit for packing thses png into a single tar named 'Icons-%(component).tar.xz'
+     Icons-%(component).tar.gz of each Component.
     '''
     for filename in glob.glob(location+"*.png"):
-        call(["tar","-uvf","{0}Icons-{1}.tar".format(location,component),filename])
-        call(["rm","-rf",filename])
-    call(["gzip","{0}Icons-{1}.tar".format(location,component)])
+        call(["tar","-uvf","{0}Icons-{1}.tar".format(location,component),filename],stdout=logfile,stderr=logfile)
+        call(["rm","-rf",filename],stdout=logfile,stderr=logfile)
+    call(["gzip","-f","{0}Icons-{1}.tar".format(location,component)])
 
 def percomponent(component,suitename=None):
     '''
     Run by main to loop for different component and architecture.
     '''
-    path = '/home/abhishek/pool/'
+    path = Config()["Dir::Pool"]
     datalist = appdata()
 
     datalist.find_desktop(component=component,suitename=suitename)
@@ -460,7 +462,7 @@ def percomponent(component,suitename=None):
         writer.close()
         dep11.close()
 
-    make_icon_tar("/home/abhishek/icon/",component)
+    make_icon_tar(Config()["Dir::Icon"],component)
     print "Done with component ",component
             
 def main():
@@ -469,7 +471,7 @@ def main():
         return
 
     suitename = sys.argv[1]
-    comp_list = ['main']
+    comp_list = ['contrib']
     for component in comp_list:
         percomponent(component,suitename)
 
