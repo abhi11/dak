@@ -164,7 +164,7 @@ class findicon():
 
     def queryicon(self):
         '''
-        function to query icon files from similar packages. copies the icon too
+        function to query icon files from similar packages. Returns path of the icon
         '''
         sql = """ select bc.file, f.filename from binaries b, bin_contents bc, files f where b.file = f.id 
         and b.package like :package and (bc.file like :icon1 or bc.file like :icon2) and 
