@@ -76,13 +76,11 @@ class MetaDataExtractor:
         li = dfile.split('/')
         return li.pop()
 
-    def read_desktop(self,dcontent=None):
+    def read_desktop(self,dcontent,compdata):
         '''
-        Convert a .desktop file into a dict
+        Parses a .desktop file and sets ComponentData properties
         '''
-        contents = {}
         lines = dcontent.splitlines()
-                
         for line in lines:
             line = self.notcomment(line)
             if line:
@@ -93,170 +91,155 @@ class MetaDataExtractor:
                     value = str(tray[1].strip())
                     #Ignore the file if NoDisplay is true
                     if key == 'NoDisplay' and value == 'True':
-                        return None
+                        compdata.ignore = True
                         
                     if key == 'Type' and value != 'Application':
-                        return None
+                        compdata.ignore = True
                     else:
-                        contents['Type'] = 'Application'
+                        compdata.typ = 'Application'
 
                     if key.startswith('Name') :
                         if key[4:] == '':
-                            try:
-                                if value not in contents['Name'].values():
-                                    contents['Name'].update({'C':value})
-                            except KeyError:
-                                contents['Name'] = {'C':value}
+                            if compdata.name:
+                                if value not in compdata.name.values():
+                                    compdata.name.update({'C':value})
+                            else:
+                                compdata.name = {'C':value}
                         else:
-                            try:
-                                if value not in contents['Name'].values():
-                                    contents['Name'].update({key[5:-1]:value})
-                            except KeyError:
-                                contents['Name'] = {key[5:-1]:value}
+                            if compdata.name:
+                                if value not in compdata.name.values():
+                                    compdata.name.update({key[5:-1]:value})
+                            else:
+                                compdata.name = {key[5:-1]:value}
                                                     
                     if key == 'Categories':
                         value = value.split(';')
                         value.pop()
-                        contents['Categories'] = value
+                        compdata.categories = value
 
                     if key.startswith('Comment'):
                         if key[7:] == '':
-                            try:
-                                if value not in contents['Summary'].values():
-                                    contents['Summary'].update({'C':value})
-                            except KeyError:
-                                contents['Summary'] = {'C':value}
+                            if compdata.summary:
+                                if value not in compdata.summary.values():
+                                    compdata.summary.update({'C':value})
+                            else:
+                                compdata.summary = {'C':value}
                         else:
-                            try:
-                                if value not in contents['Summary'].values():
-                                    contents['Summary'].update({key[8:-1]:value})
-                            except KeyError:
-                                contents['Summary'] = {key[8:-1]:value}
+                            if compdata.summary:
+                                if value not in compdata.summary.values():
+                                    compdata.summary.update({key[8:-1]:value})
+                            else:
+                                compdata.summary = {key[8:-1]:value}
 
                     if 'Keywords' in key:
                         if key[8:] == '':
-                            try:
-                                if value not in contents['Keywords'].values():
-                                    contents['Keywords'].update({'C':value})
-                            except KeyError:
-                                contents['Keywords'] = {'C':value}
+                            if compdata.keywords:
+                                if value not in compdata.keywords.values():
+                                    compdata.keywords.update({'C':value})
+                            else:
+                                compdata.keywords = {'C':value}
                         else:
-                            try:
-                                if value not in contents['Keywords'].values():
-                                    contents['Keywords'].update({key[9:-1]:value})
-                            except KeyError:
-                                contents['Keywords'] = {key[9:-1]:value}
+                            if compdata.keywords:
+                                if value not in compdata.keywords.values():
+                                    compdata.keywords.update({key[9:-1]:value})
+                            else:
+                                compdata.keywords = {key[9:-1]:value}
                                                 
                     if key == 'MimeType':
                         val_list = value[0:-1].split(';')
-                        contents['MimeTypes'] = val_list
+                        compdata.mimetypes = val_list
 
                     if 'Architectures' in key:
                         val_list = value.split(',')
-                        contents['Architectures'] = val_list
+                        compdata.archs = val_list
 
                     if key == 'Icon':
-                        contents[key] = value
+                        compdata.icon = value
                         
                 except:
                     pass
-        try:
-            if(contents['Icon']):
-                return contents
-        except KeyError:
-            return None
 
-    def read_xml(self,xml_content=None):
+    def read_xml(self,xml_content,compdata):
         '''
-        Reads the appdata from the xml file in usr/share/appdata
+        Reads the appdata from the xml file in usr/share/appdata.
+        Sets ComponentData properties
         '''
         root = et.fromstring(xml_content)
-        dic = {}
-        #requires a fix here
         for key,val in root.attrib.iteritems():
             if key == 'type':
-                dic = {'Type':root.attrib['type']}
+                compdata.typ = root.attrib['type']
     
         for subs in root:
             if subs.tag == 'id':
-                dic.update({'ID':subs.text})
+                compdata.ID = subs.text
 
             if subs.tag == "description":
                 desc = xml_content[xml_content.find('<description>'):xml_content.find('</description>')]
                 desc = desc.replace('<description>','')
                 desc = desc.strip()
                 desc = " ".join(desc.split())
-                dic.update({'Description':'  '+desc})
+                compdata.description = desc
 
             #does the screenshots well
             if subs.tag == "screenshots":
-                dic['Screenshots'] = []
+                compdata.screenshots = []
                 for shots in subs:
                     attr_dic = shots.attrib
                     for k in attr_dic.iterkeys():
-                        dic['Screenshots'].append({k:make_num(attr_dic[k])})
-                    dic['Screenshots'].append({'url':shots.text})
+                        compdata.screenshots.append({k:make_num(attr_dic[k])})
+                    compdata.screenshots.append({'url':shots.text})
 
             #needs changes provide's a bit tricky !!
             if subs.tag == "provides":
-                dic['Provides'] = {}
+                compdata.provides = {}
                 for bins in subs:
                     if bins.tag == "binary":
                         try : 
-                            dic['Provides']['binaries'].append(bins.text)
+                            compdata.provides['binaries'].append(bins.text)
                         except KeyError:
-                            dic['Provides']['binaries']=[bins.text]
-                            if bins.tag == 'library':
+                            compdata.provides['binaries']=[bins.text]
+                    if bins.tag == 'library':
                                 try : 
-                                    dic['Provides']['libraries'].append(bins.text)
+                                    compdata.provides['libraries'].append(bins.text)
                                 except KeyError:
-                                    dic['Provides']['libraries']=[bins.text]           
+                                    compdata.provides['libraries']=[bins.text]           
                                                                                                         
             if subs.tag == "url":
-                try:
-                    dic["Url"].append({subs.attrib['type'].title():subs.text})
-                except KeyError:
-                    dic["Url"] = [{subs.attrib['type'].title():subs.text}]
+                if compdata.url:
+                    compdata.url.append({subs.attrib['type'].title():subs.text})
+                else:
+                    compdata.url = [{subs.attrib['type'].title():subs.text}]
 
             if subs.tag == "project_license":
-                dic['ProjectLicense'] = subs.text
+                compdata.project_license = subs.text
 
             if subs.tag == "project_group":
-                dic['ProjectGroup'] = subs.text
+                compdata.project_group = subs.text
 
-        return dic        
-
-                
     def read_metadata(self,component,binid,filelist,pkg):
         '''
         Reads the metadata from the xml file and the desktop files.
         And returns a list of ComponentData objects.
         '''
-        cont_list = []
+        component_list = []
         #Reading xml files and associated .desktop
         try:
             for meta_file in self._loxml:
+                compdata = ComponentData(component,binid,self._filename,filelist,pkg)
                 xml_content = str(self._deb.data_content(meta_file))
-                dic = self.read_xml(xml_content)
+                self.read_xml(xml_content,compdata)
                 #Reads the desktop files associated with the xml file
-                if( '.desktop' in dic["ID"]):
+                if( '.desktop' in compdata.ID):
                     for dfile in self._lodesk:
                         #for desktop file matching the ID
-                        if dic['ID'] in dfile :
+                        if compdata.ID in dfile :
+                            ID = compdata.ID
                             dcontent = self._deb.data_content(dfile)
-                            contents  = self.read_desktop(dcontent)
+                            self.read_desktop(dcontent,compdata)
                             #overwriting the Type field of .desktop by xml
-                            #Type attribute may not always be present
-                            if contents:
-                                try:
-                                    contents['Type'] = dic['Type']
-                                except KeyError:
-                                    pass
-                                dic.update(contents)
-
-                            compdata = ComponentData(component,binid,self._filename,filelist,pkg)
-                            compdata.set_props(dic)
-                            cont_list.append(compdata)
+                            compdata.ID = ID
+                            if not compdata.ignore:
+                                component_list.append(compdata)
                             self._lodesk.remove(dfile)
         except TypeError:
             print 'xml list is empty for the deb '+ self._filename
@@ -264,17 +247,16 @@ class MetaDataExtractor:
         #Reading the desktop files other than the file which matches the id in the xml file
         try:
             for dfile in self._lodesk:
+                compdata = ComponentData(component,binid,self._filename,filelist,pkg)
                 dcontent = self._deb.data_content(dfile)
-                contents  = self.read_desktop(dcontent)
-                if contents:
-                    contents['ID'] = self.find_id(dfile)
-                    compdata = ComponentData(component,binid,self._filename,filelist,pkg)
-                    compdata.set_props(contents)
-                    cont_list.append(compdata)
+                self.read_desktop(dcontent,compdata)
+                if not compdata.ignore:
+                    compdata.ID = self.find_id(dfile)
+                    component_list.append(compdata)
         except TypeError:
             print 'desktop list is empty for the deb '+ self._filename
                         
-        return cont_list
+        return component_list
 
 class ComponentData:
     '''
@@ -289,6 +271,9 @@ class ComponentData:
         self._pkg = pkg
         self._binid = binid
         self._file = filename
+
+        #properties
+        self._ignore = False
         self._ID = None
         self._type = None
         self._name = None
@@ -302,109 +287,156 @@ class ComponentData:
         self._mimetypes = None
         self._provides = None
         self._url = None
-        self._prjctlic = None
-        self._prjctgrp = None
-        
-    def set_props(self,dic):
-        '''
-        Sets all the properties of a Componentdata
-        '''
-        try:
-            self._ID = dic['ID']
-        except KeyError:
-            pass
-        try:
-            self._type = dic['Type']
-        except KeyError:
-            pass
-        try:
-            self._name = dic['Name']
-        except KeyError:
-            pass
-        try:
-            self._categories = dic['Categories']
-        except KeyError:
-            pass
-        try:
-            self._description = dic['Description']
-        except KeyError:
-            pass
-        try:
-            self._icon = dic['Icon']
-        except KeyError:
-            pass
-        try:
-            self._keywords = dic['Keywords']
-        except KeyError:
-            pass
-        try:
-            self._summary = dic['Summary']
-        except KeyError:
-            pass
-        try:
-            self._screenshots = dic['Screenshots']
-        except KeyError:
-            pass
-        try:
-            self._archs = dic['Architectures']
-        except KeyError:
-            pass
-        try:
-            self._mimetypes = dic['MimeTypes']
-        except KeyError:
-            pass
-        try:
-            self._url = dic['Url']
-        except KeyError:
-            pass
-        try:
-            self._provides = dic['Provides']
-        except KeyError:
-            pass
-        try:
-            self._prjctlic = dic['ProjectLicense']
-        except KeyError:
-            pass
-        try:
-            self._prjctgrp = dic['ProjectGroup']
-        except KeyError:
-            pass
+        self._project_license = None
+        self._project_group = None
 
+    @property
+    def ignore(self):
+        return self._ignore
+    @ignore.setter
+    def ignore(self,val):
+        self._ignore = val
+
+    @property
+    def ID(self):
+        return self._ID       
+    @ID.setter
+    def ID(self,val):
+        self._ID = val
+
+    @property
+    def typ(self):
+        return self._type
+    @typ.setter
+    def typ(self,val):
+        self._type = val
+        
+    @property
+    def name(self):
+        return self._name
+    @name.setter
+    def name(self,val):
+        self._name = val
+            
+    @property
+    def categories(self):
+        return self._categories
+    @categories.setter
+    def icon(self,val):
+        self._categories = val
+                
+    @property
+    def icon(self):
+        return self._icon
+    @icon.setter
+    def icon(self,val):
+        self._icon = val
+       
+    @property
+    def summary(self):
+        return self._summary
+    @summary.setter
+    def summary(self,val):
+        self._summary = val
+             
+    @property
+    def description(self):
+        return self._description
+    @description.setter
+    def description(self,val):
+        self._description = val
+
+    @property
+    def screenshots(self):
+        return self._screenshots
+    @screenshots.setter
+    def screenshots(self,val):
+        self._screenshots = val
+            
+    @property
+    def keywords(self):
+        return self._keywords
+    @keywords.setter
+    def keywords(self,val):
+        self._keywords = val
+                    
+    @property
+    def archs(self):
+        return self._archs
+    @archs.setter
+    def archs(self,val):
+        self._archs = val
+            
+    @property
+    def mimetypes(self):
+        return self._mimetypes
+    @mimetypes.setter
+    def mimetypes(self,val):
+        self._mimetypes = val
+
+    @property
+    def provides(self):
+        return self._provides
+    @provides.setter
+    def mimetypes(self,val):
+        self._provides = val
+
+    @property
+    def url(self):
+        return self._url
+    @url.setter
+    def url(self,val):
+        self._url = val
+
+    @property
+    def project_license(self):
+        return self._project_license
+    @project_license.setter
+    def mimetypes(self,val):
+        self._project_license = val
+
+    @property
+    def project_group(self):
+        return self._project_group
+    @project_group.setter
+    def project_group(self,val):
+        self._project_group = val
+      
     def serialize_to_dic(self):
         ''' 
         Return a dic with all the properties
         '''
         dic = {}
-        if self._ID:
-            dic['ID'] = self._ID 
-        if self._type:
-             dic['Type'] = self._type
-        if self._name:
-             dic['Name'] = self._type
-        if self._categories:
-            dic['Categories'] = self._categories
-        if self._description:
-            dic['Description'] = self._description
-        if self._icon:
-            dic['Icon'] = self._icon
-        if self._keywords:
-            dic['Keywords'] = self._keywords
-        if self._summary:
-            dic['Summary'] = self._summary
-        if self._screenshots:
-            dic['Screenshots'] = self._screenshots
-        if self._archs:
-            dic['Architectures'] = self._archs
-        if self._mimetypes:
-            dic['MimeTypes'] = self._mimetypes
-        if self._url:
-            dic['Url'] = self._url
-        if self._provides:
-            dic['Provides'] = self._provides
-        if self._prjctlic:
-            dic['ProjectLicense'] = self._prjctlic
-        if self._prjctgrp:
-            dic['ProjectGroup'] = self._prjctgrp
+        if self.ID:
+            dic['ID'] = self.ID
+        if self.typ:
+             dic['Type'] = self.typ
+        if self.name:
+             dic['Name'] = self.name
+        if self.categories:
+            dic['Categories'] = self.categories
+        if self.description:
+            dic['Description'] = self.description
+        if self.icon:
+            dic['Icon'] = self.icon
+        if self.keywords:
+            dic['Keywords'] = self.keywords
+        if self.summary:
+            dic['Summary'] = self.summary
+        if self.screenshots:
+            dic['Screenshots'] = self.screenshots
+        if self.archs:
+            dic['Architectures'] = self.archs
+        if self.mimetypes:
+            dic['MimeTypes'] = self.mimetypes
+        if self.url:
+            dic['Url'] = self.url
+        if self.provides:
+            dic['Provides'] = self.provides
+        if self.project_license:
+            dic['ProjectLicense'] = self.project_license
+        if self.project_group:
+            dic['ProjectGroup'] = self.project_group
         return dic
 
 class ContentGenerator:
@@ -434,9 +466,9 @@ class ContentGenerator:
         '''
         Fetches screenshots from the given url and stores it in png format.
         '''
-        if self._cdata._screenshots:
+        if self._cdata.screenshots:
             cnt = 1
-            for shot in self._cdata._screenshots:
+            for shot in self._cdata.screenshots:
                 '''
                 use sha hashing to name the screenshots
                 '''
@@ -458,29 +490,33 @@ class ContentGenerator:
         Searches for icon if aboslute path to an icon
         is not given. Component with invalid icons are ignored
         '''
-        try:
-            icon = self._cdata._icon
-            if icon.endswith('.xpm') or icon.endswith('.tiff'):
-                return False
+        if self._cdata.icon:
+            try:
+                icon = self._cdata.icon
+                if icon.endswith('.xpm') or icon.endswith('.tiff'):
+                    return False
 
-            if icon[1:] in self._cdata._filelist:
-                return save_icon(icon,self._cdata._ID,self._cdata._file)
+                if icon[1:] in self._cdata._filelist:
+                    return save_icon(icon,self._cdata.ID,self._cdata._file)
                  
-            else:
-                for path in self._cdata._filelist:
-                    if path.endswith(icon+'.png') or path.endswith(icon+'.svg') or path.endswith(icon+'.ico')\
-                       or path.endswith(icon+'.xcf') or path.endswith(icon+'.gif') or path.endswith(icon+'.svgz'):
-                        if 'pixmaps' in path or 'icons' in path:
-                            return save_icon('/'+path,self._cdata._ID,self._cdata._file)
-                ficon = findicon(self._cdata._pkg,icon,self._cdata._binid)
-                flist = ficon.queryicon()
-                if flist:
-                    filepath = Config()["Dir::Pool"]+self._cdata._component+'/'+flist[1]
-                    return save_icon('/'+flist[0],self._cdata._ID,filepath)
+                else:
+                    ext_allowed = ('.png','.svg','.ico','.xcf','.gif','.svgz')
+                    for path in self._cdata._filelist:
+                        if path.endswith(ext_allowed):
+                            if 'pixmaps' in path or 'icons' in path:
+                                return save_icon('/'+path,self._cdata.ID,self._cdata._file)
+                    ficon = findicon(self._cdata._pkg,icon,self._cdata._binid)
+                    flist = ficon.queryicon()
+                    if flist:
+                        filepath = Config()["Dir::Pool"]+self._cdata._component+'/'+flist[1]
+                        return save_icon('/'+flist[0],self._cdata.ID,filepath)
+                    return False
+
+            except KeyError:
                 return False
 
-        except KeyError:
-            return False
+        #keep metadata if Icon self itself is not present
+        return True
 
 class MetadataPool:
     '''
@@ -519,21 +555,12 @@ def save_icon(icon,ID,filepath):
     '''
     Extracts the icon from the deb package and stores it.
     '''
-    l = filepath.split('/')
-    deb = l.pop()
-    ex_loc = "/".join(l)
-    call(["dpkg","-x",filepath,ex_loc],stdout=logfile,stderr=logfile)
-    icon_path = ex_loc+icon
     try:
-        check_call(["cp",icon_path,Config()["Dir::Icon"]+ID+".png"],stdout=logfile,stderr=logfile)
+        check_call("dpkg --fsys-tarfile {0} | tar xOf - .{1} > {2}/{3}.png".format(filepath,icon,Config()["Dir::Icon"],ID),
+                    shell=True,stdout=logfile,stderr=logfile)
         print "Saved icon...."
-        call(["rm","-rf",ex_loc+"/usr"])
-        call(["rm","-rf",ex_loc+"/etc"])
         return True
     except CalledProcessError:
-        call(["rm","-rf",ex_loc+"/usr"])
-        call(["rm","-rf",ex_loc+"/etc"])
-        print 'icon corrupted not saving metadata'
         return False
 
 def make_icon_tar(location,component):
@@ -545,7 +572,7 @@ def make_icon_tar(location,component):
         call(["rm","-rf",filename],stdout=logfile,stderr=logfile)
     call(["gzip","-f","{0}Icons-{1}.tar".format(location,component)])
 
-def percomponent(component,suitename=None):
+def loop_per_component(component,suitename=None):
     '''
     Run by main to loop for different component and architecture.
     '''
@@ -599,10 +626,10 @@ def main():
     suitename = sys.argv[1]
     comp_list = ['contrib','main','non-free']
     for component in comp_list:
-        percomponent(component,suitename)
+        loop_per_component(component,suitename)
+
     #close log file
     logfile.close()
 
 if __name__ == "__main__":
     main()
-    
