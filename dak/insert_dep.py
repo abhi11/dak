@@ -1,7 +1,7 @@
 #!/usr/bin/env python
-'''
-Creates a table called bin_dep11 with columns package(id) and dep11
-'''
+"""
+Inserts appstream metadata per binary.
+"""
 from daklib.dbconn import *
 
 class DEP11Metadata():
