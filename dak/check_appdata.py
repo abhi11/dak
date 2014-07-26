@@ -146,6 +146,9 @@ class appdata:
 		'''
         for k,l in self._commdic.iteritems():
             print k +': ',l
+    
+    def close(self):
+        self._session.close()
 
 class findicon():
     '''
@@ -179,7 +182,14 @@ class findicon():
             if path.endswith(self._icon+'.png') or path.endswith(self._icon+'.svg') or path.endswith(self._icon+'.ico')\
                or path.endswith(self._icon+'.xcf') or path.endswith(self._icon+'.gif') or path.endswith(self._icon+'.svgz'):
                 return [path,filename]
+        
         return False
+
+    def close(self):
+        """
+        Closes the session
+        """
+        self._session.close()
 
 
 #For testing

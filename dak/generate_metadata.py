@@ -450,17 +450,15 @@ class ContentGenerator:
         '''
         self._cdata = compdata
         
-    def save_meta(self,ofile,depobj):
+    def write_meta(self,ofile,dep11):
         '''
         Saves Appstream metadata in yaml format and also invokes the fetch_store function.
         '''
-        bool_shots = self.fetch_screenshots()
-        bool_icon =  self.fetch_icon()
-        if bool_shots or bool_icon :
-            metadata = yaml.dump(self._cdata.serialize_to_dic(),default_flow_style=False,
-                                 explicit_start=True,explicit_end=False,width=100,indent=4)
-            ofile.write(metadata)
-            depobj.insertdata(self._cdata._binid,metadata)
+        metadata = yaml.dump(self._cdata.serialize_to_dic(),default_flow_style=False,
+                             explicit_start=True,explicit_end=False,width=100,indent=4)
+        ofile.write(metadata)
+        dep11.insertdata(self._cdata._binid,metadata)
+        dep11._session.commit()
 
     def fetch_screenshots(self):
         '''
@@ -468,6 +466,7 @@ class ContentGenerator:
         '''
         if self._cdata.screenshots:
             cnt = 1
+            success = []
             for shot in self._cdata.screenshots:
                 '''
                 use sha hashing to name the screenshots
@@ -480,10 +479,13 @@ class ContentGenerator:
                     f.write(image)
                     f.close()
                     print "Screenshots saved..."
-                    return True
-                except KeyError:
-                    pass
-        return False
+                    success.append(True)
+                except:
+                    success.append(False)
+            return any(success)
+            
+        #don't ignore metadata if screenshots itself is not present
+        return True
 
     def fetch_icon(self):
         '''
@@ -491,28 +493,27 @@ class ContentGenerator:
         is not given. Component with invalid icons are ignored
         '''
         if self._cdata.icon:
-            try:
-                icon = self._cdata.icon
-                if icon.endswith('.xpm') or icon.endswith('.tiff'):
-                    return False
+            icon = self._cdata.icon
+            if icon.endswith('.xpm') or icon.endswith('.tiff'):
+                return False
 
-                if icon[1:] in self._cdata._filelist:
-                    return save_icon(icon,self._cdata.ID,self._cdata._file)
+            if icon[1:] in self._cdata._filelist:
+                return save_icon(icon,self._cdata.ID,self._cdata._file)
                  
-                else:
-                    ext_allowed = ('.png','.svg','.ico','.xcf','.gif','.svgz')
-                    for path in self._cdata._filelist:
-                        if path.endswith(ext_allowed):
-                            if 'pixmaps' in path or 'icons' in path:
-                                return save_icon('/'+path,self._cdata.ID,self._cdata._file)
-                    ficon = findicon(self._cdata._pkg,icon,self._cdata._binid)
-                    flist = ficon.queryicon()
-                    if flist:
-                        filepath = Config()["Dir::Pool"]+self._cdata._component+'/'+flist[1]
-                        return save_icon('/'+flist[0],self._cdata.ID,filepath)
-                    return False
+            else:
+                ext_allowed = ('.png','.svg','.ico','.xcf','.gif','.svgz')
+                for path in self._cdata._filelist:
+                    if path.endswith(ext_allowed):
+                        if 'pixmaps' in path or 'icons' in path:
+                            return save_icon('/'+path,self._cdata.ID,self._cdata._file)
 
-            except KeyError:
+                ficon = findicon(self._cdata._pkg,icon,self._cdata._binid)
+                flist = ficon.queryicon()
+                ficon.close()
+                
+                if flist:
+                    filepath = Config()["Dir::Pool"]+self._cdata._component+'/'+flist[1]
+                    return save_icon('/'+flist[0],self._cdata.ID,filepath)
                 return False
 
         #keep metadata if Icon self itself is not present
@@ -544,8 +545,10 @@ class MetadataPool:
         dep11 = DEP11Metadata()
         for cdata in self._list:
             cg = ContentGenerator(cdata)
-            cg.save_meta(ofile,dep11)
-            dep11._session.commit()
+            screen_bool = cg.fetch_screenshots()
+            icon_bool = cg.fetch_icon()
+            if screen_bool or icon_bool:
+                cg.write_meta(ofile,dep11)
         writer.close()
         dep11.close()
 
@@ -578,9 +581,10 @@ def loop_per_component(component,suitename=None):
     '''
     path = Config()["Dir::Pool"]
     datalist = appdata()
-
     datalist.find_desktop(component=component,suitename=suitename)
     datalist.find_xml(component=component,suitename=suitename)
+    datalist.close()
+
     info_dic = datalist._idlist
     desk_dic = datalist._deskdic
     xml_dic = datalist._xmldic
@@ -604,6 +608,7 @@ def loop_per_component(component,suitename=None):
                 deskfiles = desk_dic[key]
             except KeyError:
                 deskfiles = None
+
             #loop over all_dic to find metadata of all the debian packages
             try:
                 mde = MetaDataExtractor(path+key,xmlfiles,deskfiles)
@@ -615,6 +620,7 @@ def loop_per_component(component,suitename=None):
 
         #Save metadata of all binaries of the Component-arch
         pool.saver()
+
     make_icon_tar(Config()["Dir::Icon"],component)
     print "Done with component ",component
             
@@ -624,7 +630,7 @@ def main():
         return
 
     suitename = sys.argv[1]
-    comp_list = ['contrib','main','non-free']
+    comp_list = ('contrib')#,'main','non-free')
     for component in comp_list:
         loop_per_component(component,suitename)
 
